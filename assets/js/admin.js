@@ -482,8 +482,15 @@ function openAdminCalendarSlot(slotISO, bookingId) {
         <textarea name="adminNotes" id="admin-notes-input">${booking.adminNotes || ''}</textarea>
       </div>
       <div class="form-group">
-        <label>Edit Duration (minutes)</label>
-        <input name="duration" id="edit-duration" type="number" min="15" step="15" value="${booking.durationMinutes || 60}">
+        <label>Duration (hours)</label>
+        <select name="duration" id="edit-duration">
+          ${[...Array(8)].map((_,i)=>{
+            const hours = i+1;
+            const minutes = hours * 60;
+            const selected = minutes === booking.durationMinutes ? 'selected' : '';
+            return `<option value="${minutes}" ${selected}>${hours} hour${hours>1?'s':''}</option>`;
+          }).join('')}
+        </select>
       </div>
       <div class="form-actions">
         <button type="submit">Save Changes</button>
@@ -503,8 +510,14 @@ function openAdminCalendarSlot(slotISO, bookingId) {
         </select>
       </div>
       <div class="form-group">
-        <label>Duration (minutes)</label>
-        <input name="duration" type="number" min="15" step="15" value="60" required>
+        <label>Duration (hours)</label>
+        <select name="duration" required>
+          ${[...Array(8)].map((_,i)=>{
+            const hours = i+1;
+            const minutes = hours * 60;
+            return `<option value="${minutes}">${hours} hour${hours>1?'s':''}</option>`;
+          }).join('')}
+        </select>
       </div>
       <div class="form-group">
         <label>Notes</label>
@@ -526,7 +539,7 @@ function openAdminCalendarSlot(slotISO, bookingId) {
         const f = e.target;
         const newMin = parseInt(f.duration.value, 10);
         const newAdminNotes = f.adminNotes.value;
-        if (isNaN(newMin) || newMin < 15) {
+        if (isNaN(newMin) || newMin < 60) {
           showToast('Invalid duration', 'error');
           return;
         }
@@ -582,7 +595,7 @@ function openAdminCalendarSlot(slotISO, bookingId) {
         const userId = f.userId.value;
         const duration = parseInt(f.duration.value, 10);
         const notes = f.notes.value;
-        if (!userId || isNaN(duration) || duration < 15) {
+        if (!userId || isNaN(duration) || duration < 60) {
           showToast('Please select user and valid duration', 'error');
           return;
         }
