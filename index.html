@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio94 Booking</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body class="public-bg">
+  <header class="top-bar">
+    <div class="logo">Studio94</div>
+    <div id="user-bar" class="user-bar">
+      <!-- Populated by JS: login form or user info -->
+    </div>
+  </header>
+  <main>
+    <section class="calendar-section">
+      <div class="calendar-controls">
+        <button id="prev-week" aria-label="Previous week">&lt;</button>
+        <span id="week-label"></span>
+        <button id="next-week" aria-label="Next week">&gt;</button>
+        <button id="today-btn">Today</button>
+      </div>
+      <div id="calendar-grid" class="calendar-grid">
+        <!-- Calendar grid rendered by JS -->
+      </div>
+    </section>
+  </main>
+  <div id="slidein-panel" class="slidein-panel">
+    <!-- Slide-in booking form rendered by JS -->
+  </div>
+  <div id="toast-container" class="toast-container"></div>
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/storage.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

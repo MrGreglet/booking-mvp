@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Studio94 Admin</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body class="admin-bg">
+  <div id="admin-login" class="admin-login-panel">
+    <h2>Admin Login</h2>
+    <form id="admin-login-form">
+      <label for="admin-password">Password</label>
+      <input type="password" id="admin-password" autocomplete="current-password" required>
+      <button type="submit">Login</button>
+    </form>
+    <div id="admin-login-error" class="error-msg"></div>
+  </div>
+  <div id="admin-app" class="admin-app" style="display:none;">
+    <header class="top-bar admin-top-bar">
+      <div class="logo">Studio94 Admin</div>
+      <div class="admin-actions">
+        <span id="pending-badge" class="activity-badge">0</span>
+        <button id="logout-btn">Logout</button>
+      </div>
+    </header>
+    <main>
+      <nav class="admin-nav">
+        <button data-panel="users" class="nav-btn active">Users</button>
+        <button data-panel="bookings" class="nav-btn">Bookings</button>
+        <button data-panel="settings" class="nav-btn">Settings</button>
+      </nav>
+      <section id="admin-panel-users" class="admin-panel"></section>
+      <section id="admin-panel-bookings" class="admin-panel" style="display:none;"></section>
+      <section id="admin-panel-settings" class="admin-panel" style="display:none;"></section>
+    </main>
+  </div>
+  <div id="slidein-panel" class="slidein-panel"></div>
+  <div id="toast-container" class="toast-container"></div>
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/storage.js"></script>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>
