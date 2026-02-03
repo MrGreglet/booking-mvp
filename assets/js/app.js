@@ -231,7 +231,11 @@ function openBookingPanel(slotISO) {
     <div class="form-group">
       <label for="duration">Duration (hours)</label>
       <select id="duration" name="duration">
-        ${[...Array(8)].map((_,i)=>`<option value="${i+1}">${i+1} hour${i>0?'s':''}</option>`).join('')}
+        ${[...Array(16)].map((_,i)=>{
+          const hours = (i+1) * 0.5;
+          const label = hours === 1 ? '1 hour' : `${hours} hours`;
+          return `<option value="${hours}">${label}</option>`;
+        }).join('')}
       </select>
     </div>
     <div class="form-group">
