@@ -637,7 +637,11 @@ body.admin-bg {
   #slidein-panel {
     width: 100vw;
     max-width: 100vw;
-    padding: 1.2rem 0.75rem;
+    padding: 1rem 0.75rem;
+    overflow-y: auto;
+  }
+  #slidein-panel.open {
+    max-height: 100vh;
   }
   .table {
     font-size: 0.85rem;
@@ -771,6 +775,20 @@ body.admin-bg {
   .slidein-panel .form-actions button {
     flex: 1 1 100%;
     min-width: 100%;
+    font-size: 0.85rem;
+    padding: 0.65rem 0.75rem;
+  }
+  .slidein-panel .form-group {
+    margin-bottom: 0.75rem;
+  }
+  .slidein-panel h2 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .slidein-panel input,
+  .slidein-panel select,
+  .slidein-panel textarea {
+    font-size: 16px; /* Prevents zoom on iOS */
   }
 }
 

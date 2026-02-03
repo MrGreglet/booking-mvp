@@ -138,15 +138,37 @@ function openUserForm(id) {
     if (user) {
       storage.updateUser(user.id, data);
       showToast('User updated');
+      closeSlidein();
+      renderUsersPanel();
     } else {
       const pin = Math.floor(1000+Math.random()*9000).toString();
       data.id = 'u'+Date.now();
       data.pinHash = simpleHash(pin);
-      storage.addUser(data);
-      showToast(`User created. PIN: ${pin}`);
+      storage.addUser(data).then(() => {
+        // Show PIN prominently in slide-out
+        let html = `<button class="close-btn" aria-label="Close">×</button>`;
+        html += `<h2 style="color: var(--success);">✅ User Created!</h2>`;
+        html += `<div style="margin: 2rem 0;">
+          <p style="font-size: 1.1rem; margin-bottom: 1.5rem;">User <strong>${data.name}</strong> has been created successfully.</p>
+          <div style="background: rgba(76, 175, 80, 0.15); padding: 1.5rem; border-radius: var(--radius-md); border: 2px solid var(--success); text-align: center;">
+            <p style="color: var(--text-muted); margin-bottom: 0.5rem; font-size: 0.9rem;">LOGIN PIN:</p>
+            <p style="font-size: 2.5rem; font-weight: 700; color: var(--success); letter-spacing: 0.5rem; margin: 0;">${pin}</p>
+          </div>
+          <p style="color: var(--text-muted); margin-top: 1.5rem; font-size: 0.9rem;">
+            ⚠️ <strong>Save this PIN!</strong> The user needs this to log in.<br>
+            Email: <strong>${data.email}</strong>
+          </p>
+        </div>`;
+        html += `<div class="form-actions">
+          <button class="secondary" id="done-btn">Done</button>
+        </div>`;
+        
+        openSlidein(html);
+        document.querySelector('.close-btn').onclick = () => { closeSlidein(); renderUsersPanel(); };
+        document.getElementById('done-btn').onclick = () => { closeSlidein(); renderUsersPanel(); };
+        showToast(`User created. PIN: ${pin}`, 'success');
+      });
     }
-    closeSlidein();
-    renderUsersPanel();
   };
 }
 function confirmDeleteUser(id) {
