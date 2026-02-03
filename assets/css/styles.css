@@ -631,7 +631,12 @@ body.admin-bg {
   }
   .table th,
   .table td {
-    padding: 0.5rem 0.3rem;
+    padding: 0.6rem 0.5rem;
+  }
+  /* Reset column widths for tablet */
+  .table th,
+  .table td {
+    width: auto !important;
   }
 }
 
@@ -1149,16 +1154,56 @@ body.admin-bg {
   border: 1px solid var(--border-glass);
 }
 
+.table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
 .table th,
 .table td {
   color: var(--text-main);
   font-size: 1.08rem;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .table th {
   color: var(--text-main);
   font-weight: 700;
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* Column widths for users table */
+.table th:nth-child(1), /* Name */
+.table td:nth-child(1) {
+  width: 18%;
+}
+
+.table th:nth-child(2), /* Email */
+.table td:nth-child(2) {
+  width: 22%;
+}
+
+.table th:nth-child(3), /* Membership */
+.table td:nth-child(3) {
+  width: 15%;
+}
+
+.table th:nth-child(4), /* Contract */
+.table td:nth-child(4) {
+  width: 15%;
+}
+
+.table th:nth-child(5), /* PIN */
+.table td:nth-child(5) {
+  width: 10%;
+}
+
+.table th:nth-child(6), /* Actions */
+.table td:nth-child(6) {
+  width: 20%;
 }
 
 .table .action-btn,
