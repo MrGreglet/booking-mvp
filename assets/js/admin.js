@@ -150,15 +150,38 @@ function openUserForm(id) {
   };
 }
 function confirmDeleteUser(id) {
-  showConfirmDialog({
-    title: 'Delete User',
-    message: 'Are you sure you want to delete this user and all their bookings?',
-    onConfirm: () => {
-      storage.deleteUser(id);
-      showToast('User deleted');
-      renderUsersPanel();
-    }
-  });
+  const user = storage.getUserById(id);
+  if (!user) {
+    showToast('User not found', 'error');
+    return;
+  }
+  
+  // Show confirmation slide-out
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">⚠️ Delete User</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to delete this user?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>Name:</strong> ${user.name}</p>
+      <p style="margin: 0.5rem 0;"><strong>Email:</strong> ${user.email}</p>
+      <p style="margin: 0.5rem 0;"><strong>Membership:</strong> ${user.membership}</p>
+    </div>
+    <p style="color: var(--danger); font-weight: 600;">⚠️ This will permanently delete all their bookings!</p>
+  </div>`;
+  html += `<div class="form-actions">
+    <button class="danger" id="confirm-delete-btn">Yes, Delete User</button>
+    <button class="secondary" id="cancel-delete-btn">Cancel</button>
+  </div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.getElementById('cancel-delete-btn').onclick = closeSlidein;
+  document.getElementById('confirm-delete-btn').onclick = () => {
+    storage.deleteUser(id);
+    showToast('User deleted', 'success');
+    closeSlidein();
+    renderUsersPanel();
+  };
 }
 function resetUserPin(id) {
   const pin = Math.floor(1000+Math.random()*9000).toString();
