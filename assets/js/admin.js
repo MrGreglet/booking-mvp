@@ -484,12 +484,11 @@ function openAdminCalendarSlot(slotISO, bookingId) {
       <div class="form-group">
         <label>Duration (hours)</label>
         <select name="duration" id="edit-duration">
-          ${[...Array(16)].map((_,i)=>{
-            const hours = (i+1) * 0.5;
+          ${[...Array(8)].map((_,i)=>{
+            const hours = i+1;
             const minutes = hours * 60;
             const selected = minutes === booking.durationMinutes ? 'selected' : '';
-            const label = hours === 1 ? '1 hour' : `${hours} hours`;
-            return `<option value="${minutes}" ${selected}>${label}</option>`;
+            return `<option value="${minutes}" ${selected}>${hours} hour${hours>1?'s':''}</option>`;
           }).join('')}
         </select>
       </div>
@@ -513,11 +512,10 @@ function openAdminCalendarSlot(slotISO, bookingId) {
       <div class="form-group">
         <label>Duration (hours)</label>
         <select name="duration" required>
-          ${[...Array(16)].map((_,i)=>{
-            const hours = (i+1) * 0.5;
+          ${[...Array(8)].map((_,i)=>{
+            const hours = i+1;
             const minutes = hours * 60;
-            const label = hours === 1 ? '1 hour' : `${hours} hours`;
-            return `<option value="${minutes}">${label}</option>`;
+            return `<option value="${minutes}">${hours} hour${hours>1?'s':''}</option>`;
           }).join('')}
         </select>
       </div>
