@@ -77,16 +77,41 @@ function renderUserBar() {
   }
 
   function cancelMyBooking(id) {
-    showConfirmDialog({
-      title: 'Cancel Booking',
-      message: 'Are you sure you want to cancel this booking?',
-      onConfirm: () => {
-        window.storage.updateBooking(id, { status: 'cancelled' });
-        closeSlidein();
-        renderCalendar();
-        showToast('Booking cancelled', 'success');
-      }
-    });
+    const booking = getBookings().find(b => b.id === id);
+    if (!booking) {
+      showToast('Booking not found', 'error');
+      return;
+    }
+    
+    // Show confirmation slide-out
+    let html = `<button class="close-btn" aria-label="Close">×</button>`;
+    html += `<h2 style="color: var(--danger);">⚠️ Cancel Booking</h2>`;
+    html += `<div style="margin: 1.5rem 0;">
+      <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to cancel this booking?</p>
+      <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+        <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+        <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+        <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+      </div>
+      <p style="color: var(--text-muted);">You can request a new booking anytime.</p>
+    </div>`;
+    html += `<div class="form-actions">
+      <button class="danger" id="confirm-cancel-btn">Yes, Cancel Booking</button>
+      <button class="secondary" id="back-cancel-btn">Go Back</button>
+    </div>`;
+    
+    openSlidein(html);
+    document.querySelector('.close-btn').onclick = closeSlidein;
+    document.getElementById('back-cancel-btn').onclick = () => {
+      closeSlidein();
+      showMyBookings(); // Return to bookings list
+    };
+    document.getElementById('confirm-cancel-btn').onclick = () => {
+      window.storage.updateBooking(id, { status: 'cancelled' });
+      showToast('Booking cancelled', 'success');
+      closeSlidein();
+      renderCalendar();
+    };
   }
   }
 }
