@@ -562,9 +562,7 @@ function openAdminCalendarSlot(slotISO, bookingId) {
         renderBookingsPanel();
       };
       document.getElementById('delete-btn').onclick = () => {
-        deleteAdminBooking(booking.id);
-        closeSlidein();
-        renderBookingsPanel();
+        confirmDeleteBooking(booking.id);
       };
       if (booking.status === 'pending') {
         document.getElementById('approve-btn').onclick = () => { approveBooking(booking.id); closeSlidein(); };
@@ -603,6 +601,45 @@ function updateAdminBooking({ id, durationMinutes, endISO, adminNotes }) {
 }
 
 // Helper: delete booking from admin slot
+function confirmDeleteBooking(id) {
+  const booking = storage.getBookingById(id);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  const user = storage.getUserById(booking.userId);
+  
+  // Show confirmation slide-out
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">⚠️ Delete Booking</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to permanently delete this booking?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>User:</strong> ${user ? user.name : 'Unknown'}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+      ${booking.notes ? `<p style="margin: 0.5rem 0;"><strong>Notes:</strong> ${booking.notes}</p>` : ''}
+    </div>
+    <p style="color: var(--danger); font-weight: 600;">⚠️ This action cannot be undone!</p>
+  </div>`;
+  html += `<div class="form-actions">
+    <button class="danger" id="confirm-delete-booking-btn">Yes, Delete Booking</button>
+    <button class="secondary" id="cancel-delete-booking-btn">Cancel</button>
+  </div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.getElementById('cancel-delete-booking-btn').onclick = closeSlidein;
+  document.getElementById('confirm-delete-booking-btn').onclick = () => {
+    storage.deleteBooking(id);
+    showToast('Booking deleted', 'success');
+    closeSlidein();
+    renderBookingsPanel();
+  };
+}
+
 function deleteAdminBooking(id) {
   storage.deleteBooking(id);
   showToast('Booking deleted', 'success');

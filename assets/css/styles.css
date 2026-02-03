@@ -225,12 +225,7 @@ body.admin-bg {
   box-shadow: var(--shadow-glass);
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-glass);
-  max-height: calc(100vh - 180px);
-  min-height: 500px;
-  overflow: hidden;
   position: relative;
-  display: flex;
-  flex-direction: column;
 }
 
 .calendar-controls {
@@ -279,11 +274,8 @@ body.admin-bg {
   text-align: center;
 }
 
-/* Calendar grid wrapper for scrolling */
+/* Calendar grid wrapper - no separate scrolling */
 #calendar-grid {
-  flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 0 1.5rem 1.5rem 1.5rem;
 }
 
@@ -471,12 +463,10 @@ body.admin-bg {
   min-width: 0;
 }
 
-/* Admin calendar container with scroll support for sticky headers */
+/* Admin calendar container - no separate scrolling */
 #admin-calendar-container {
-  max-height: calc(100vh - 250px);
-  min-height: 600px;
-  overflow-y: auto;
   position: relative;
+  padding-bottom: 2rem;
 }
 
 /* Remove duplicate admin-only slot rules; unified above */
@@ -625,19 +615,11 @@ body.admin-bg {
     max-width: 98vw;
     margin: 1rem auto;
   }
-  .calendar-section {
-    min-height: 400px;
-    max-height: calc(100vh - 150px);
-  }
   .calendar-controls {
     padding: 0.75rem;
   }
   #calendar-grid {
     padding: 0 0.75rem 0.75rem 0.75rem;
-  }
-  #admin-calendar-container {
-    min-height: 400px;
-    max-height: calc(100vh - 200px);
   }
   #slidein-panel {
     width: 100vw;
@@ -683,18 +665,12 @@ body.admin-bg {
   }
   .calendar-section {
     margin: 0.5rem;
-    min-height: 350px;
-    max-height: calc(100vh - 120px);
   }
   .calendar-controls {
     padding: 0.5rem;
   }
   #calendar-grid {
     padding: 0 0.5rem 0.5rem 0.5rem;
-  }
-  #admin-calendar-container {
-    min-height: 350px;
-    max-height: calc(100vh - 180px);
   }
   .admin-nav {
     flex-direction: column;
@@ -729,10 +705,6 @@ body.admin-bg {
   .calendar-section,
   .admin-app {
     margin: 0.25rem;
-  }
-  .calendar-section {
-    min-height: 300px;
-    max-height: calc(100vh - 100px);
   }
   .calendar-controls {
     padding: 0.4rem;
