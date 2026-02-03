@@ -398,6 +398,19 @@ body.admin-bg {
   z-index: 3;
 }
 
+/* Past slots (user calendar only) - dim and not clickable */
+.calendar-grid .slot-cell.past {
+  background: rgba(0, 0, 0, 0.3);
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.calendar-grid .slot-cell.past:hover {
+  background: rgba(0, 0, 0, 0.3);
+  outline: none;
+}
+
 /* Pending: amber tint (PUBLIC + ADMIN) */
 .calendar-grid .slot-cell.tentative,
 .admin-calendar-grid .slot-cell.tentative {

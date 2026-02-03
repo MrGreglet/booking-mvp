@@ -159,6 +159,7 @@ function renderCalendar() {
     html += `<div class="calendar-header">${formatDateWeekday(d)}<br>${formatDateYMD(d)}</div>`;
   }
   // Rows
+  const now = new Date();
   for(const m of slots) {
     const h = Math.floor(m / 60);
     const min = m % 60;
@@ -169,10 +170,19 @@ function renderCalendar() {
       const slotDate = new Date(days[day]);
       slotDate.setHours(h, min, 0, 0);
       const slotISO = slotDate.toISOString();
+      
+      // Check if slot is in the past
+      const isPast = slotDate < now;
+      
       const slotStatus = getSlotStatus(slotDate, bookings, settings);
       let cellClass = 'slot-cell';
       let cellLabel = '';
-      if (slotStatus.blocked) {
+      
+      if (isPast) {
+        // Past slots are blocked and not clickable for users
+        cellClass += ' blocked past';
+        cellLabel = '';
+      } else if (slotStatus.blocked) {
         cellClass += ' blocked';
         cellLabel = slotStatus.label;
       } else if (slotStatus.tentative) {
@@ -186,8 +196,8 @@ function renderCalendar() {
     }
   }
   grid.innerHTML = html;
-  // Click handlers
-  document.querySelectorAll('.slot-cell.available').forEach(cell => {
+  // Click handlers - only for available slots (not past)
+  document.querySelectorAll('.slot-cell.available:not(.past)').forEach(cell => {
     cell.onclick = () => {
       if (typeof console !== 'undefined' && console.log) console.log('slot click', cell.getAttribute('data-slot'));
       onSlotClick(cell.getAttribute('data-slot'));
@@ -340,7 +350,21 @@ function bindWeekNav() {
   const prev = document.getElementById('prev-week');
   const next = document.getElementById('next-week');
   const today = document.getElementById('today-btn');
-  if (prev) prev.onclick = () => { currentWeekStart = addDays(currentWeekStart, -7); renderCalendar(); };
+  
+  if (prev) {
+    prev.onclick = () => {
+      const newWeekStart = addDays(currentWeekStart, -7);
+      const thisWeekStart = getWeekStart(new Date());
+      // Don't allow going to past weeks
+      if (newWeekStart >= thisWeekStart) {
+        currentWeekStart = newWeekStart;
+        renderCalendar();
+      } else {
+        showToast('Cannot view past weeks', 'info');
+      }
+    };
+  }
+  
   if (next) next.onclick = () => { currentWeekStart = addDays(currentWeekStart, 7); renderCalendar(); };
   if (today) today.onclick = () => { currentWeekStart = getWeekStart(new Date()); renderCalendar(); };
 }
