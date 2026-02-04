@@ -77,23 +77,28 @@ CREATE INDEX idx_bookings_status ON bookings(status);
 CREATE INDEX idx_bookings_user_status ON bookings(user_id, status);
 
 -- ============================================================
--- 4. ENSURE SETTINGS TABLE EXISTS
+-- 4. ENSURE SETTINGS TABLE EXISTS (IDEMPOTENT)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS settings (
+-- Drop trigger first (if exists)
+DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+
+-- Drop and recreate settings table to ensure correct schema
+DROP TABLE IF EXISTS settings CASCADE;
+
+CREATE TABLE settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
-  business_hours_start TEXT DEFAULT '09:00',
-  business_hours_end TEXT DEFAULT '17:00',
-  buffer_minutes INT DEFAULT 30,
-  slot_interval_minutes INT DEFAULT 60,
+  business_hours_start TEXT NOT NULL DEFAULT '09:00',
+  business_hours_end TEXT NOT NULL DEFAULT '17:00',
+  buffer_minutes INT NOT NULL DEFAULT 30,
+  slot_interval_minutes INT NOT NULL DEFAULT 60,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Insert default settings if not exists
+-- Insert default settings
 INSERT INTO settings (id, business_hours_start, business_hours_end, buffer_minutes, slot_interval_minutes)
-VALUES ('default', '09:00', '17:00', 30, 60)
-ON CONFLICT (id) DO NOTHING;
+VALUES ('default', '09:00', '17:00', 30, 60);
 
 -- ============================================================
 -- 5. UPDATED_AT TRIGGERS
