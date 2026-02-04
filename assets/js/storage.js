@@ -1,5 +1,7 @@
-// storage-supabase.js - Supabase Backend Storage Layer
-// This file replaces LocalStorage with Supabase database
+// ============================================================
+// STORAGE.JS - Supabase Auth + RPC Backend Layer
+// Invite-only magic link auth with server-enforced security
+// ============================================================
 
 (function() {
 'use strict';
@@ -8,43 +10,152 @@ const db = window.supabaseClient;
 
 // Default settings
 const DEFAULT_SETTINGS = {
-  openTime: '06:00',
-  closeTime: '00:00',
+  openTime: '09:00',
+  closeTime: '17:00',
   bufferMinutes: 30,
-  slotIntervalMinutes: 30
+  slotIntervalMinutes: 60
 };
 
 // Cache for loaded data
-let cachedUsers = null;
-let cachedBookings = null;
 let cachedSettings = null;
-let isLoading = false;
+let cachedBookings = null;
+let cachedProfiles = null;
+let cachedAllowedUsers = null;
+let currentUser = null;
+let currentSession = null;
+let isAdmin = false;
 
-// ========== INITIALIZATION ==========
+// ========== AUTH MANAGEMENT ==========
 
-async function initializeDB() {
-  // Load settings, create default if doesn't exist
-  const { data: settings } = await db
-    .from('settings')
-    .select('*')
-    .eq('id', 'default')
+async function initAuth() {
+  // Get current session
+  const { data: { session }, error } = await db.auth.getSession();
+  
+  if (error) {
+    console.error('Error getting session:', error);
+    return null;
+  }
+  
+  if (session) {
+    currentSession = session;
+    currentUser = session.user;
+    
+    // Check if user is admin
+    await checkAdminStatus();
+    
+    // Ensure profile exists
+    try {
+      await db.rpc('get_or_create_profile');
+    } catch (err) {
+      console.error('Error creating profile:', err);
+    }
+    
+    return currentUser;
+  }
+  
+  return null;
+}
+
+async function checkAdminStatus() {
+  if (!currentUser) {
+    isAdmin = false;
+    return false;
+  }
+  
+  const { data, error } = await db
+    .from('admin_users')
+    .select('user_id')
+    .eq('user_id', currentUser.id)
     .single();
   
-  if (!settings) {
-    await db.from('settings').insert({
-      id: 'default',
-      ...DEFAULT_SETTINGS
+  isAdmin = !error && !!data;
+  return isAdmin;
+}
+
+function getCurrentUser() {
+  return currentUser;
+}
+
+function getCurrentSession() {
+  return currentSession;
+}
+
+function getIsAdmin() {
+  return isAdmin;
+}
+
+async function signOut() {
+  const { error } = await db.auth.signOut();
+  if (error) {
+    console.error('Error signing out:', error);
+    return;
+  }
+  
+  currentUser = null;
+  currentSession = null;
+  isAdmin = false;
+  
+  // Clear cache
+  cachedBookings = null;
+  cachedProfiles = null;
+  cachedAllowedUsers = null;
+}
+
+// Magic link request via Edge Function
+async function requestMagicLink(email) {
+  const edgeFunctionUrl = `${db.supabaseUrl.replace('.supabase.co', '')}.supabase.co/functions/v1/request-magic-link`;
+  
+  try {
+    const response = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email })
     });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to send magic link');
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Error requesting magic link:', error);
+    throw error;
   }
 }
+
+// Listen for auth state changes
+db.auth.onAuthStateChange(async (event, session) => {
+  console.log('Auth state changed:', event);
+  
+  if (event === 'SIGNED_IN' && session) {
+    currentSession = session;
+    currentUser = session.user;
+    await checkAdminStatus();
+    
+    // Ensure profile exists
+    try {
+      await db.rpc('get_or_create_profile');
+    } catch (err) {
+      console.error('Error creating profile:', err);
+    }
+  } else if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    currentSession = null;
+    isAdmin = false;
+    cachedBookings = null;
+    cachedProfiles = null;
+    cachedAllowedUsers = null;
+  }
+});
 
 // ========== SETTINGS ==========
 
 function getSettings() {
-  if (cachedSettings) return cachedSettings;
-  
-  // Synchronous fallback while loading
-  return DEFAULT_SETTINGS;
+  return cachedSettings || DEFAULT_SETTINGS;
 }
 
 async function loadSettings() {
@@ -60,8 +171,8 @@ async function loadSettings() {
   }
   
   cachedSettings = {
-    openTime: data.open_time,
-    closeTime: data.close_time,
+    openTime: data.business_hours_start,
+    closeTime: data.business_hours_end,
     bufferMinutes: data.buffer_minutes,
     slotIntervalMinutes: data.slot_interval_minutes
   };
@@ -70,9 +181,13 @@ async function loadSettings() {
 }
 
 async function setSettings(updates) {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
   const newSettings = {
-    open_time: updates.openTime,
-    close_time: updates.closeTime,
+    business_hours_start: updates.openTime,
+    business_hours_end: updates.closeTime,
     buffer_minutes: updates.bufferMinutes,
     slot_interval_minutes: updates.slotIntervalMinutes
   };
@@ -84,324 +199,384 @@ async function setSettings(updates) {
   
   if (error) {
     console.error('Error updating settings:', error);
-    return;
+    throw error;
   }
   
   cachedSettings = updates;
 }
 
-// ========== USERS ==========
+// ========== PROFILES (replaces old users) ==========
 
-function getUsers() {
-  return cachedUsers || [];
-}
-
-async function loadUsers() {
+async function loadProfiles() {
+  if (!isAdmin) {
+    // Non-admins can only see their own profile
+    if (!currentUser) return [];
+    
+    const { data, error } = await db
+      .from('profiles')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .single();
+    
+    if (error) {
+      console.error('Error loading profile:', error);
+      return [];
+    }
+    
+    cachedProfiles = data ? [data] : [];
+    return cachedProfiles;
+  }
+  
+  // Admins can see all profiles
   const { data, error } = await db
-    .from('users')
+    .from('profiles')
     .select('*')
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: false });
   
   if (error) {
-    console.error('Error loading users:', error);
+    console.error('Error loading profiles:', error);
     return [];
   }
   
-  cachedUsers = data.map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    pinHash: u.pin_hash,
-    membership: u.membership,
-    contractRef: u.contract_ref,
-    createdAtISO: u.created_at
-  }));
+  cachedProfiles = data || [];
+  return cachedProfiles;
+}
+
+function getProfiles() {
+  return cachedProfiles || [];
+}
+
+async function updateProfile(userId, updates) {
+  // Users can only update their own profile, admins can update any
+  if (!isAdmin && currentUser?.id !== userId) {
+    throw new Error('Cannot update another user\'s profile');
+  }
   
-  return cachedUsers;
-}
-
-function getUserById(id) {
-  return getUsers().find(u => u.id === id);
-}
-
-function getUserByEmail(email) {
-  return getUsers().find(u => u.email === email);
-}
-
-async function addUser(user) {
-  const dbUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    pin_hash: user.pinHash,
-    membership: user.membership,
-    contract_ref: user.contractRef || ''
+  const profileUpdates = {
+    name: updates.name,
+    membership: updates.membership,
+    contract_details: updates.contractDetails
   };
   
-  const { data, error } = await db
-    .from('users')
-    .insert(dbUser)
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Error adding user:', error);
-    return;
-  }
-  
-  // Refresh cache
-  await loadUsers();
-}
-
-async function updateUser(id, updates) {
-  const dbUpdates = {};
-  if (updates.name) dbUpdates.name = updates.name;
-  if (updates.email) dbUpdates.email = updates.email;
-  if (updates.pinHash) dbUpdates.pin_hash = updates.pinHash;
-  if (updates.membership) dbUpdates.membership = updates.membership;
-  if (updates.contractRef !== undefined) dbUpdates.contract_ref = updates.contractRef;
-  
   const { error } = await db
-    .from('users')
-    .update(dbUpdates)
-    .eq('id', id);
+    .from('profiles')
+    .update(profileUpdates)
+    .eq('user_id', userId);
   
   if (error) {
-    console.error('Error updating user:', error);
-    return;
+    console.error('Error updating profile:', error);
+    throw error;
   }
   
   // Refresh cache
-  await loadUsers();
-}
-
-async function deleteUser(id) {
-  const { error } = await db
-    .from('users')
-    .delete()
-    .eq('id', id);
-  
-  if (error) {
-    console.error('Error deleting user:', error);
-    return;
-  }
-  
-  // Refresh cache
-  await loadUsers();
+  await loadProfiles();
 }
 
 // ========== BOOKINGS ==========
 
-function getBookings() {
-  return cachedBookings || [];
-}
-
 async function loadBookings() {
-  const { data, error } = await db
+  let query = db
     .from('bookings')
     .select('*')
-    .order('start_iso', { ascending: true });
+    .order('start_time', { ascending: true });
+  
+  // Non-admins only see their own bookings
+  if (!isAdmin && currentUser) {
+    query = query.eq('user_id', currentUser.id);
+  }
+  
+  const { data, error } = await query;
   
   if (error) {
     console.error('Error loading bookings:', error);
     return [];
   }
   
-  cachedBookings = data.map(b => ({
-    id: b.id,
-    userId: b.user_id,
-    startISO: b.start_iso,
-    endISO: b.end_iso,
-    durationMinutes: b.duration_minutes,
-    status: b.status,
-    notes: b.notes || '',
-    adminNotes: b.admin_notes || '',
-    isExtra: b.is_extra || false,
-    createdAtISO: b.created_at
+  // Transform to match old format
+  cachedBookings = (data || []).map(booking => ({
+    id: booking.id,
+    userId: booking.user_id,
+    userEmail: booking.user_email,
+    startISO: booking.start_time,
+    endISO: booking.end_time,
+    durationMinutes: booking.duration_minutes,
+    status: booking.status,
+    userNotes: booking.user_notes,
+    adminNotes: booking.admin_notes,
+    createdAt: booking.created_at
   }));
   
   return cachedBookings;
 }
 
-function getBookingById(id) {
-  return getBookings().find(b => b.id === id);
+function getBookings() {
+  return cachedBookings || [];
 }
 
-async function addBooking(booking) {
-  const dbBooking = {
-    id: booking.id,
-    user_id: booking.userId,
-    start_iso: booking.startISO,
-    end_iso: booking.endISO,
-    duration_minutes: booking.durationMinutes,
-    status: booking.status,
-    notes: booking.notes || '',
-    admin_notes: booking.adminNotes || '',
-    is_extra: booking.isExtra || false
-  };
+// Request booking via RPC (server validates everything)
+async function requestBooking(startISO, endISO, userNotes = '') {
+  if (!currentUser) {
+    throw new Error('Must be logged in to book');
+  }
   
+  try {
+    const { data, error } = await db.rpc('request_booking', {
+      p_start: startISO,
+      p_end: endISO,
+      p_user_notes: userNotes || null
+    });
+    
+    if (error) {
+      // Extract meaningful error message
+      const errorMsg = error.message || 'Failed to create booking';
+      throw new Error(errorMsg);
+    }
+    
+    // Refresh bookings
+    await loadBookings();
+    
+    return data; // Returns booking ID
+  } catch (error) {
+    console.error('Error requesting booking:', error);
+    throw error;
+  }
+}
+
+// Cancel own booking (users can only cancel pending bookings)
+async function cancelBooking(bookingId) {
   const { error } = await db
     .from('bookings')
-    .insert(dbBooking);
+    .update({ status: 'cancelled' })
+    .eq('id', bookingId)
+    .eq('user_id', currentUser.id)
+    .eq('status', 'pending');
   
   if (error) {
-    console.error('Error adding booking:', error);
-    return;
+    console.error('Error cancelling booking:', error);
+    throw error;
   }
   
   // Refresh cache
   await loadBookings();
 }
 
-async function updateBooking(id, updates) {
-  const dbUpdates = {};
-  if (updates.status) dbUpdates.status = updates.status;
-  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-  if (updates.adminNotes !== undefined) dbUpdates.admin_notes = updates.adminNotes;
-  if (updates.isExtra !== undefined) dbUpdates.is_extra = updates.isExtra;
-  if (updates.durationMinutes) dbUpdates.duration_minutes = updates.durationMinutes;
-  if (updates.endISO) dbUpdates.end_iso = updates.endISO;
-  
-  const { error } = await db
-    .from('bookings')
-    .update(dbUpdates)
-    .eq('id', id);
-  
-  if (error) {
-    console.error('Error updating booking:', error);
-    return;
+// ========== ADMIN FUNCTIONS ==========
+
+// Approve/decline/cancel bookings (admin only)
+async function setBookingStatus(bookingId, status, adminNotes = '') {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
   }
   
-  // Refresh cache
-  await loadBookings();
+  try {
+    const { error } = await db.rpc('admin_set_booking_status', {
+      p_booking_id: bookingId,
+      p_status: status,
+      p_admin_notes: adminNotes || null
+    });
+    
+    if (error) {
+      throw new Error(error.message || 'Failed to update booking status');
+    }
+    
+    // Refresh bookings
+    await loadBookings();
+  } catch (error) {
+    console.error('Error setting booking status:', error);
+    throw error;
+  }
 }
 
-async function deleteBooking(id) {
+// Delete booking (admin only)
+async function deleteBooking(bookingId) {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
   const { error } = await db
     .from('bookings')
     .delete()
-    .eq('id', id);
+    .eq('id', bookingId);
   
   if (error) {
     console.error('Error deleting booking:', error);
-    return;
+    throw error;
   }
   
   // Refresh cache
   await loadBookings();
 }
 
-// ========== CONFLICT CHECK ==========
+// Invite user (admin only)
+async function inviteUser(email) {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
+  try {
+    const { error } = await db.rpc('admin_invite_email', {
+      p_email: email.toLowerCase().trim()
+    });
+    
+    if (error) {
+      throw new Error(error.message || 'Failed to invite user');
+    }
+    
+    // Refresh allowed users
+    await loadAllowedUsers();
+  } catch (error) {
+    console.error('Error inviting user:', error);
+    throw error;
+  }
+}
 
-function checkBookingConflict({ startISO, endISO, excludeId }) {
+// Remove invitation (admin only)
+async function removeInvite(email) {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
+  try {
+    const { error } = await db.rpc('admin_remove_invite', {
+      p_email: email.toLowerCase().trim()
+    });
+    
+    if (error) {
+      throw new Error(error.message || 'Failed to remove invite');
+    }
+    
+    // Refresh allowed users
+    await loadAllowedUsers();
+  } catch (error) {
+    console.error('Error removing invite:', error);
+    throw error;
+  }
+}
+
+// Load allowed users (admin only)
+async function loadAllowedUsers() {
+  if (!isAdmin) {
+    cachedAllowedUsers = [];
+    return [];
+  }
+  
+  const { data, error } = await db
+    .from('allowed_users')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error loading allowed users:', error);
+    return [];
+  }
+  
+  cachedAllowedUsers = data || [];
+  return cachedAllowedUsers;
+}
+
+function getAllowedUsers() {
+  return cachedAllowedUsers || [];
+}
+
+// ========== INITIALIZATION ==========
+
+async function loadAll() {
+  try {
+    // Initialize auth first
+    await initAuth();
+    
+    // Load settings (always)
+    await loadSettings();
+    
+    // Load data based on auth status
+    if (currentUser) {
+      await loadBookings();
+      await loadProfiles();
+      
+      if (isAdmin) {
+        await loadAllowedUsers();
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error in loadAll:', error);
+    return false;
+  }
+}
+
+// ========== CONFLICT CHECKING (CLIENT-SIDE HELPER) ==========
+
+function checkBookingConflict(startISO, endISO, excludeId = null) {
   const settings = getSettings();
+  const bufferMs = settings.bufferMinutes * 60 * 1000;
+  
+  const newStart = new Date(startISO).getTime();
+  const newEnd = new Date(endISO).getTime();
+  
   const bookings = getBookings();
-  const buffer = settings.bufferMinutes;
-  const start = new Date(startISO);
-  const end = new Date(endISO);
   
-  if (isNaN(start) || isNaN(end)) {
-    return { ok: false, conflict: null, reason: 'Invalid start or end time' };
-  }
-  
-  // Check closing time
-  const closeHM = settings.closeTime.split(':').map(Number);
-  let closeHour = closeHM[0];
-  if (closeHour === 0) closeHour = 24;
-  const closeDate = new Date(start);
-  closeDate.setHours(closeHour, 0, 0, 0);
-  if (end > closeDate) {
-    return { ok: false, conflict: null, reason: 'Booking exceeds closing time' };
-  }
-  
-  // Check for conflicts with other bookings (with buffer)
-  for (const b of bookings) {
-    if (excludeId && b.id === excludeId) continue;
-    if (b.status === 'declined' || b.status === 'cancelled') continue;
+  for (const booking of bookings) {
+    // Skip excluded booking
+    if (booking.id === excludeId) continue;
     
-    const bStart = new Date(b.startISO);
-    const bEnd = new Date(b.endISO);
+    // Only check approved bookings
+    if (booking.status !== 'approved') continue;
     
-    if (isNaN(bStart) || isNaN(bEnd)) continue;
+    const existingStart = new Date(booking.startISO).getTime();
+    const existingEnd = new Date(booking.endISO).getTime();
     
-    const bufferStart = new Date(bStart);
-    bufferStart.setMinutes(bufferStart.getMinutes() - buffer);
-    const bufferEnd = new Date(bEnd);
-    bufferEnd.setMinutes(bufferEnd.getMinutes() + buffer);
-    
-    if (start < bufferEnd && end > bufferStart) {
-      return { ok: false, conflict: b, reason: `Conflicts with ${b.status} booking` };
+    // Check overlap with buffer
+    if (
+      (newStart >= existingStart - bufferMs && newStart < existingEnd + bufferMs) ||
+      (newEnd > existingStart - bufferMs && newEnd <= existingEnd + bufferMs) ||
+      (newStart <= existingStart - bufferMs && newEnd >= existingEnd + bufferMs)
+    ) {
+      return booking;
     }
   }
   
-  return { ok: true };
+  return null;
 }
-
-// ========== SEED DEMO DATA ==========
-
-async function seedDemoData() {
-  // Clear existing data
-  await db.from('bookings').delete().neq('id', '');
-  await db.from('users').delete().neq('id', '');
-  
-  // Add demo users
-  const demoUsers = [
-    { id: 'u1', name: 'John Doe', email: 'john@example.com', pinHash: window.utils.simpleHash('1234'), membership: 'subscribed', contractRef: 'SUB-001' },
-    { id: 'u2', name: 'Jane Smith', email: 'jane@example.com', pinHash: window.utils.simpleHash('5678'), membership: 'standard', contractRef: '' }
-  ];
-  
-  for (const user of demoUsers) {
-    await addUser(user);
-  }
-  
-  console.log('Demo data seeded!');
-  await loadAll();
-}
-
-// ========== LOAD ALL DATA ==========
-
-async function loadAll() {
-  if (isLoading) return;
-  isLoading = true;
-  
-  try {
-    await initializeDB();
-    await Promise.all([
-      loadSettings(),
-      loadUsers(),
-      loadBookings()
-    ]);
-  } catch (error) {
-    console.error('Error loading data:', error);
-  } finally {
-    isLoading = false;
-  }
-}
-
-// ========== RESET ALL ==========
-
-async function resetAll() {
-  await db.from('bookings').delete().neq('id', '');
-  await db.from('users').delete().neq('id', '');
-  cachedUsers = [];
-  cachedBookings = [];
-  await loadAll();
-}
-
-// ========== INITIALIZE ON LOAD ==========
-
-// Auto-load data on startup
-loadAll();
 
 // ========== EXPORT ==========
 
 window.storage = {
-  getSettings, setSettings,
-  getUsers, getUserById, getUserByEmail, addUser, updateUser, deleteUser,
-  getBookings, getBookingById, addBooking, updateBooking, deleteBooking,
+  // Auth
+  initAuth,
+  getCurrentUser,
+  getCurrentSession,
+  getIsAdmin,
+  signOut,
+  requestMagicLink,
+  
+  // Settings
+  getSettings,
+  loadSettings,
+  setSettings,
+  
+  // Profiles (replaces users)
+  loadProfiles,
+  getProfiles,
+  updateProfile,
+  
+  // Bookings
+  loadBookings,
+  getBookings,
+  requestBooking,
+  cancelBooking,
   checkBookingConflict,
-  seedDemoData, resetAll,
-  loadAll // Expose for manual refresh
+  
+  // Admin functions
+  setBookingStatus,
+  deleteBooking,
+  inviteUser,
+  removeInvite,
+  loadAllowedUsers,
+  getAllowedUsers,
+  
+  // Initialization
+  loadAll
 };
 
 })();

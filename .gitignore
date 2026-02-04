@@ -14,9 +14,33 @@ desktop.ini
 node_modules/
 npm-debug.log
 
-# Environment files
+# Environment files and secrets
 .env
 .env.local
+.env.*.local
+supabase/.env
+supabase/.env.local
+
+# CRITICAL: Supabase service role key (NEVER commit this!)
+**/service-role-key*
+*service_role*
+.secrets
+secrets.json
 
 # Logs
 *.log
+supabase/functions/**/*.log
+
+# Supabase local development
+.supabase/
+**/supabase/.branches/
+**/supabase/.temp/
+
+# Build outputs (if added later)
+dist/
+build/
+
+# Backup files (safe to commit, but optional)
+# Uncomment these if you don't want to track backups:
+# storage-old.js
+# storage-localstorage-backup.js

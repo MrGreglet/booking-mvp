@@ -1,0 +1,8 @@
+# Supabase Edge Functions Configuration
+
+[project]
+# Replace with your project ID
+project_id = "qkjcqtsacuspfdslgfxj"
+
+[functions.request-magic-link]
+verify_jwt = false  # This is a public endpoint

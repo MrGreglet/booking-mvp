@@ -1,871 +1,667 @@
-// --- Admin Calendar State ---
-let adminViewMode = "week"; // "week" or "month"
-let adminFocusDate = new Date(); // controls which week/month is shown
+// ============================================================
+// ADMIN.JS - Admin Dashboard (Auth-based)
+// Requires user to be in admin_users table
+// ============================================================
 
 (() => {
-// admin.js - Admin dashboard logic for Studio94
-// Handles admin login, user/booking/settings management, notifications
-
-// Dev mode flag - set to true to enable dev features like seed button
-const DEV_MODE = false;
+'use strict';
 
 const {
-  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
-  simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein
+  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes,
+  showToast, openSlidein, closeSlidein
 } = window.utils;
+
 const storage = window.storage;
 
-const ADMIN_PASSWORD = 'studio94';
-let adminLoggedIn = false;
+let currentUser = null;
+let isAdmin = false;
+let currentPanel = 'invites';
+let isCheckingMagicLink = false;
 
-// --- Admin Login ---
-function renderAdminLogin() {
-  document.getElementById('admin-login').style.display = '';
-  document.getElementById('admin-app').style.display = 'none';
-  document.getElementById('admin-login-form').onsubmit = (e) => {
-    e.preventDefault();
-    const pw = document.getElementById('admin-password').value;
-    if (pw === ADMIN_PASSWORD) {
-      adminLoggedIn = true;
-      renderAdminApp();
-    } else {
-      document.getElementById('admin-login-error').textContent = 'Incorrect password.';
-    }
-  };
-}
+// ============================================================
+// AUTHENTICATION
+// ============================================================
 
-// --- Admin App ---
-function renderAdminApp() {
-  document.getElementById('admin-login').style.display = 'none';
-  document.getElementById('admin-app').style.display = '';
-  renderPendingBadge();
-  renderUsersPanel();
-  renderBookingsPanel();
-  renderSettingsPanel();
-  // Nav
-  document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      document.querySelectorAll('.admin-panel').forEach(p => p.style.display = 'none');
-      const panelId = 'admin-panel-' + btn.dataset.panel;
-      document.getElementById(panelId).style.display = '';
-    };
-  });
-  document.getElementById('logout-btn').onclick = () => {
-    adminLoggedIn = false;
-    renderAdminLogin();
-  };
-}
-
-// --- Pending Badge ---
-function renderPendingBadge() {
-  const count = storage.getBookings().filter(b=>b.status==='pending').length;
-  document.getElementById('pending-badge').textContent = count;
-}
-
-// --- Users Panel ---
-function renderUsersPanel() {
-  const users = storage.getUsers();
-  let html = `<h2>Users</h2><button id="add-user-btn">Add User</button>`;
-  html += `<table class="table"><thead><tr><th>Name</th><th>Email</th><th>Membership</th><th>Contract</th><th>PIN</th><th>Actions</th></tr></thead><tbody>`;
-  for(const u of users) {
-    html += `<tr>
-      <td>${u.name}</td>
-      <td>${u.email}</td>
-      <td>${u.membership}</td>
-      <td>${u.contractRef}</td>
-      <td><button class="action-btn" data-id="${u.id}" data-action="reset-pin">Reset</button></td>
-      <td>
-        <button class="action-btn" data-id="${u.id}" data-action="edit">Edit</button>
-        <button class="action-btn danger" data-id="${u.id}" data-action="delete">Delete</button>
-      </td>
-    </tr>`;
+async function checkAdminAccess() {
+  currentUser = storage.getCurrentUser();
+  isAdmin = storage.getIsAdmin();
+  
+  const loginPanel = document.getElementById('admin-login');
+  const appPanel = document.getElementById('admin-app');
+  
+  if (!currentUser || !isAdmin) {
+    // Show login
+    loginPanel.style.display = 'flex';
+    appPanel.style.display = 'none';
+    return false;
   }
-  html += `</tbody></table>`;
-  document.getElementById('admin-panel-users').innerHTML = html;
-  document.getElementById('add-user-btn').onclick = () => openUserForm();
-  document.querySelectorAll('.action-btn').forEach(btn => {
-    const id = btn.getAttribute('data-id');
-    const action = btn.getAttribute('data-action');
-    if (action === 'edit') btn.onclick = () => openUserForm(id);
-    if (action === 'delete') btn.onclick = () => confirmDeleteUser(id);
-    if (action === 'reset-pin') btn.onclick = () => resetUserPin(id);
+  
+  // Show admin app
+  loginPanel.style.display = 'none';
+  appPanel.style.display = 'block';
+  return true;
+}
+
+async function handleAdminLogin(e) {
+  e.preventDefault();
+  
+  const emailInput = document.getElementById('admin-email');
+  const submitBtn = document.getElementById('admin-login-btn');
+  const statusEl = document.getElementById('admin-login-status');
+  const errorEl = document.getElementById('admin-login-error');
+  const email = emailInput.value.trim();
+  
+  // Disable form
+  emailInput.disabled = true;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
+  statusEl.textContent = '';
+  errorEl.textContent = '';
+  
+  try {
+    await storage.requestMagicLink(email);
+    
+    statusEl.innerHTML = `
+      <div style="color: var(--success); margin-top: 1rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: var(--radius-md);">
+        ✓ Check your email!<br>
+        <small>Click the login link to continue.</small>
+      </div>
+    `;
+    emailInput.value = '';
+  } catch (error) {
+    errorEl.textContent = error.message || 'Failed to send login link';
+  } finally {
+    emailInput.disabled = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Send Login Link';
+  }
+}
+
+async function handleLogout() {
+  await storage.signOut();
+  location.reload();
+}
+
+async function checkMagicLinkRedirect() {
+  if (isCheckingMagicLink) return;
+  isCheckingMagicLink = true;
+  
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+  const accessToken = hashParams.get('access_token');
+  
+  if (accessToken) {
+    showToast('Logging in...');
+    window.history.replaceState(null, '', window.location.pathname);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await init();
+  }
+}
+
+// ============================================================
+// PANEL NAVIGATION
+// ============================================================
+
+function switchPanel(panelName) {
+  currentPanel = panelName;
+  
+  // Update nav buttons
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-panel') === panelName);
+  });
+  
+  // Show/hide panels
+  document.querySelectorAll('.admin-panel').forEach(panel => {
+    panel.style.display = panel.id === `admin-panel-${panelName}` ? 'block' : 'none';
+  });
+  
+  // Render active panel
+  switch (panelName) {
+    case 'invites':
+      renderInvitesPanel();
+      break;
+    case 'profiles':
+      renderProfilesPanel();
+      break;
+    case 'bookings':
+      renderBookingsPanel();
+      break;
+    case 'settings':
+      renderSettingsPanel();
+      break;
+  }
+}
+
+// ============================================================
+// INVITES PANEL
+// ============================================================
+
+function renderInvitesPanel() {
+  const panel = document.getElementById('admin-panel-invites');
+  const allowedUsers = storage.getAllowedUsers();
+  
+  let html = `
+    <div class="panel-header">
+      <h2>Invited Users</h2>
+      <button class="primary" id="invite-user-btn">+ Invite User</button>
+    </div>
+  `;
+  
+  if (allowedUsers.length === 0) {
+    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No invited users yet.</div>`;
+  } else {
+    html += `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Invited At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    for (const user of allowedUsers) {
+      const invitedDate = new Date(user.created_at);
+      html += `
+        <tr>
+          <td>${user.email}</td>
+          <td>${formatDateYMD(invitedDate)} ${formatTimeHM(invitedDate)}</td>
+          <td>
+            <button class="action-btn danger remove-invite-btn" data-email="${user.email}">Remove</button>
+          </td>
+        </tr>
+      `;
+    }
+    
+    html += `</tbody></table>`;
+  }
+  
+  panel.innerHTML = html;
+  
+  // Bind events
+  const inviteBtn = document.getElementById('invite-user-btn');
+  if (inviteBtn) {
+    inviteBtn.onclick = openInviteForm;
+  }
+  
+  document.querySelectorAll('.remove-invite-btn').forEach(btn => {
+    btn.onclick = () => confirmRemoveInvite(btn.getAttribute('data-email'));
   });
 }
-function openUserForm(id) {
-  const user = id ? storage.getUserById(id) : null;
+
+function openInviteForm() {
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2>${user ? 'Edit' : 'Add'} User</h2>
-    <form id="user-form">
-      <div class="form-group">
-        <label>Name</label>
-        <input name="name" required value="${user ? user.name : ''}">
-      </div>
-      <div class="form-group">
-        <label>Email</label>
-        <input name="email" type="email" required value="${user ? user.email : ''}" ${user ? 'readonly' : ''}>
-      </div>
-      <div class="form-group">
-        <label>Membership</label>
-        <select name="membership">
-          <option value="subscribed" ${user && user.membership==='subscribed'?'selected':''}>Subscribed</option>
-          <option value="standard" ${user && user.membership==='standard'?'selected':''}>Standard</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Contract Ref</label>
-        <input name="contractRef" value="${user ? user.contractRef : ''}">
-      </div>
-      <div class="form-actions">
-        <button type="submit">${user ? 'Update' : 'Create'}</button>
-        <button type="button" class="secondary" id="cancel-btn">Cancel</button>
-      </div>
-    </form>`;
+  html += `<h2>Invite User</h2>`;
+  html += `<form id="invite-form">
+    <div class="form-group">
+      <label for="invite-email">Email Address</label>
+      <input type="email" id="invite-email" placeholder="user@example.com" required autocomplete="email">
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 1rem 0;">
+      The user will be able to request a magic link to log in and book sessions.
+    </p>
+    <div class="form-actions">
+      <button type="submit" class="primary">Send Invite</button>
+      <button type="button" class="secondary cancel-btn">Cancel</button>
+    </div>
+  </form>`;
+  
   openSlidein(html);
   document.querySelector('.close-btn').onclick = closeSlidein;
-  document.getElementById('cancel-btn').onclick = closeSlidein;
-  document.getElementById('user-form').onsubmit = (e) => {
-    e.preventDefault();
-    const f = e.target;
-    const data = {
-      name: f.name.value.trim(),
-      email: f.email.value.trim(),
-      membership: f.membership.value,
-      contractRef: f.contractRef.value.trim(),
-      createdAtISO: user ? user.createdAtISO : new Date().toISOString()
-    };
-    if (user) {
-      storage.updateUser(user.id, data);
-      showToast('User updated');
+  document.querySelector('.cancel-btn').onclick = closeSlidein;
+  document.getElementById('invite-form').onsubmit = handleInviteUser;
+}
+
+async function handleInviteUser(e) {
+  e.preventDefault();
+  
+  const emailInput = document.getElementById('invite-email');
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const email = emailInput.value.trim();
+  
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Inviting...';
+  
+  try {
+    await storage.inviteUser(email);
+    showToast(`Invited ${email}`, 'success');
+    closeSlidein();
+    renderInvitesPanel();
+  } catch (error) {
+    showToast(error.message || 'Failed to invite user', 'error');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Send Invite';
+  }
+}
+
+function confirmRemoveInvite(email) {
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">Remove Invitation</h2>`;
+  html += `<p style="margin: 1.5rem 0;">Are you sure you want to remove access for <b>${email}</b>?</p>`;
+  html += `<p style="color: var(--text-muted); font-size: 0.9rem;">They will no longer be able to log in or book sessions.</p>`;
+  html += `<div class="form-actions">
+    <button class="danger" id="confirm-remove-btn">Remove Access</button>
+    <button class="secondary" id="cancel-remove-btn">Cancel</button>
+  </div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.getElementById('cancel-remove-btn').onclick = closeSlidein;
+  document.getElementById('confirm-remove-btn').onclick = async () => {
+    try {
+      await storage.removeInvite(email);
+      showToast('Access removed', 'success');
       closeSlidein();
-      renderUsersPanel();
-    } else {
-      const pin = Math.floor(1000+Math.random()*9000).toString();
-      data.id = 'u'+Date.now();
-      data.pinHash = simpleHash(pin);
-      storage.addUser(data).then(() => {
-        // Show PIN prominently in slide-out
-        let html = `<button class="close-btn" aria-label="Close">×</button>`;
-        html += `<h2 style="color: var(--success);">✅ User Created!</h2>`;
-        html += `<div style="margin: 2rem 0;">
-          <p style="font-size: 1.1rem; margin-bottom: 1.5rem;">User <strong>${data.name}</strong> has been created successfully.</p>
-          <div style="background: rgba(76, 175, 80, 0.15); padding: 1.5rem; border-radius: var(--radius-md); border: 2px solid var(--success); text-align: center;">
-            <p style="color: var(--text-muted); margin-bottom: 0.5rem; font-size: 0.9rem;">LOGIN PIN:</p>
-            <p style="font-size: 2.5rem; font-weight: 700; color: var(--success); letter-spacing: 0.5rem; margin: 0;">${pin}</p>
-          </div>
-          <p style="color: var(--text-muted); margin-top: 1.5rem; font-size: 0.9rem;">
-            ⚠️ <strong>Save this PIN!</strong> The user needs this to log in.<br>
-            Email: <strong>${data.email}</strong>
-          </p>
-        </div>`;
-        html += `<div class="form-actions">
-          <button class="secondary" id="done-btn">Done</button>
-        </div>`;
-        
-        openSlidein(html);
-        document.querySelector('.close-btn').onclick = () => { closeSlidein(); renderUsersPanel(); };
-        document.getElementById('done-btn').onclick = () => { closeSlidein(); renderUsersPanel(); };
-        showToast(`User created. PIN: ${pin}`, 'success');
-      });
+      renderInvitesPanel();
+    } catch (error) {
+      showToast(error.message || 'Failed to remove invite', 'error');
     }
   };
 }
-function confirmDeleteUser(id) {
-  const user = storage.getUserById(id);
-  if (!user) {
-    showToast('User not found', 'error');
+
+// ============================================================
+// PROFILES PANEL
+// ============================================================
+
+function renderProfilesPanel() {
+  const panel = document.getElementById('admin-panel-profiles');
+  const profiles = storage.getProfiles();
+  
+  let html = `
+    <div class="panel-header">
+      <h2>User Profiles</h2>
+    </div>
+  `;
+  
+  if (profiles.length === 0) {
+    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No user profiles yet.</div>`;
+  } else {
+    html += `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Membership</th>
+            <th>Contract</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    for (const profile of profiles) {
+      html += `
+        <tr>
+          <td>${profile.name || 'N/A'}</td>
+          <td>${profile.email}</td>
+          <td><span class="badge ${profile.membership === 'subscribed' ? 'badge-success' : 'badge-default'}">${profile.membership}</span></td>
+          <td>${profile.contract_details || 'N/A'}</td>
+          <td>
+            <button class="action-btn primary edit-profile-btn" data-user-id="${profile.user_id}">Edit</button>
+          </td>
+        </tr>
+      `;
+    }
+    
+    html += `</tbody></table>`;
+  }
+  
+  panel.innerHTML = html;
+  
+  // Bind events
+  document.querySelectorAll('.edit-profile-btn').forEach(btn => {
+    btn.onclick = () => openEditProfileForm(btn.getAttribute('data-user-id'));
+  });
+}
+
+function openEditProfileForm(userId) {
+  const profile = storage.getProfiles().find(p => p.user_id === userId);
+  if (!profile) {
+    showToast('Profile not found', 'error');
     return;
   }
   
-  // Show confirmation slide-out
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2 style="color: var(--danger);">⚠️ Delete User</h2>`;
-  html += `<div style="margin: 1.5rem 0;">
-    <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to delete this user?</p>
-    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
-      <p style="margin: 0.5rem 0;"><strong>Name:</strong> ${user.name}</p>
-      <p style="margin: 0.5rem 0;"><strong>Email:</strong> ${user.email}</p>
-      <p style="margin: 0.5rem 0;"><strong>Membership:</strong> ${user.membership}</p>
+  html += `<h2>Edit Profile</h2>`;
+  html += `<form id="edit-profile-form">
+    <div class="form-group">
+      <label>Email</label>
+      <input type="text" value="${profile.email}" disabled>
     </div>
-    <p style="color: var(--danger); font-weight: 600;">⚠️ This will permanently delete all their bookings!</p>
+    <div class="form-group">
+      <label for="edit-name">Name</label>
+      <input type="text" id="edit-name" value="${profile.name || ''}" placeholder="User Name">
+    </div>
+    <div class="form-group">
+      <label for="edit-membership">Membership</label>
+      <select id="edit-membership">
+        <option value="standard" ${profile.membership === 'standard' ? 'selected' : ''}>Standard</option>
+        <option value="subscribed" ${profile.membership === 'subscribed' ? 'selected' : ''}>Subscribed</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="edit-contract">Contract Details</label>
+      <textarea id="edit-contract" rows="3">${profile.contract_details || ''}</textarea>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary">Save Changes</button>
+      <button type="button" class="secondary cancel-btn">Cancel</button>
+    </div>
+  </form>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.querySelector('.cancel-btn').onclick = closeSlidein;
+  document.getElementById('edit-profile-form').onsubmit = (e) => handleUpdateProfile(e, userId);
+}
+
+async function handleUpdateProfile(e, userId) {
+  e.preventDefault();
+  
+  const name = document.getElementById('edit-name').value.trim();
+  const membership = document.getElementById('edit-membership').value;
+  const contractDetails = document.getElementById('edit-contract').value.trim();
+  
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+  
+  try {
+    await storage.updateProfile(userId, {
+      name,
+      membership,
+      contractDetails
+    });
+    
+    showToast('Profile updated', 'success');
+    closeSlidein();
+    renderProfilesPanel();
+  } catch (error) {
+    showToast(error.message || 'Failed to update profile', 'error');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Save Changes';
+  }
+}
+
+// ============================================================
+// BOOKINGS PANEL
+// ============================================================
+
+function renderBookingsPanel() {
+  const panel = document.getElementById('admin-panel-bookings');
+  const bookings = storage.getBookings().sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+  const pendingCount = bookings.filter(b => b.status === 'pending').length;
+  
+  // Update badge
+  document.getElementById('pending-badge').textContent = pendingCount;
+  
+  let html = `
+    <div class="panel-header">
+      <h2>All Bookings</h2>
+      <span class="info-text">${pendingCount} pending approval</span>
+    </div>
+  `;
+  
+  if (bookings.length === 0) {
+    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No bookings yet.</div>`;
+  } else {
+    html += `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date & Time</th>
+            <th>User</th>
+            <th>Duration</th>
+            <th>Status</th>
+            <th>Notes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    for (const booking of bookings) {
+      const start = new Date(booking.startISO);
+      const end = new Date(booking.endISO);
+      const statusClass = booking.status === 'approved' ? 'badge-success' :
+                         booking.status === 'declined' ? 'badge-danger' :
+                         booking.status === 'cancelled' ? 'badge-secondary' : 'badge-warning';
+      
+      html += `
+        <tr>
+          <td>
+            <b>${formatDateYMD(start)}</b><br>
+            ${formatTimeHM(start)} - ${formatTimeHM(end)}
+          </td>
+          <td>${booking.userEmail}</td>
+          <td>${booking.durationMinutes} min</td>
+          <td><span class="badge ${statusClass}">${booking.status}</span></td>
+          <td>
+            ${booking.userNotes ? `<div style="font-size: 0.85rem;">User: ${booking.userNotes}</div>` : ''}
+            ${booking.adminNotes ? `<div style="font-size: 0.85rem; color: var(--primary);">Admin: ${booking.adminNotes}</div>` : ''}
+          </td>
+          <td>
+            ${booking.status === 'pending' ? `
+              <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
+              <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
+            ` : booking.status === 'approved' ? `
+              <button class="action-btn danger cancel-booking-btn" data-id="${booking.id}">Cancel</button>
+            ` : ''}
+            <button class="action-btn danger delete-btn" data-id="${booking.id}">Delete</button>
+          </td>
+        </tr>
+      `;
+    }
+    
+    html += `</tbody></table>`;
+  }
+  
+  panel.innerHTML = html;
+  
+  // Bind events using event delegation
+  panel.addEventListener('click', async (e) => {
+    const target = e.target;
+    const bookingId = target.getAttribute('data-id');
+    
+    if (!bookingId) return;
+    
+    if (target.classList.contains('approve-btn')) {
+      await handleApproveBooking(bookingId);
+    } else if (target.classList.contains('decline-btn')) {
+      await handleDeclineBooking(bookingId);
+    } else if (target.classList.contains('cancel-booking-btn')) {
+      await handleCancelBooking(bookingId);
+    } else if (target.classList.contains('delete-btn')) {
+      confirmDeleteBooking(bookingId);
+    }
+  });
+}
+
+async function handleApproveBooking(bookingId) {
+  try {
+    await storage.setBookingStatus(bookingId, 'approved');
+    showToast('Booking approved', 'success');
+    renderBookingsPanel();
+  } catch (error) {
+    showToast(error.message || 'Failed to approve booking', 'error');
+  }
+}
+
+async function handleDeclineBooking(bookingId) {
+  const notes = prompt('Reason for decline (optional):');
+  
+  try {
+    await storage.setBookingStatus(bookingId, 'declined', notes || '');
+    showToast('Booking declined', 'success');
+    renderBookingsPanel();
+  } catch (error) {
+    showToast(error.message || 'Failed to decline booking', 'error');
+  }
+}
+
+async function handleCancelBooking(bookingId) {
+  const notes = prompt('Reason for cancellation (optional):');
+  
+  try {
+    await storage.setBookingStatus(bookingId, 'cancelled', notes || '');
+    showToast('Booking cancelled', 'success');
+    renderBookingsPanel();
+  } catch (error) {
+    showToast(error.message || 'Failed to cancel booking', 'error');
+  }
+}
+
+function confirmDeleteBooking(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">⚠️ Delete Booking</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p>Are you sure you want to permanently delete this booking?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin: 1rem 0;">
+      <p style="margin: 0.5rem 0;"><strong>User:</strong> ${booking.userEmail}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+    </div>
+    <p style="color: var(--danger);">This action cannot be undone.</p>
   </div>`;
   html += `<div class="form-actions">
-    <button class="danger" id="confirm-delete-btn">Yes, Delete User</button>
+    <button class="danger" id="confirm-delete-btn">Delete Booking</button>
     <button class="secondary" id="cancel-delete-btn">Cancel</button>
   </div>`;
   
   openSlidein(html);
   document.querySelector('.close-btn').onclick = closeSlidein;
   document.getElementById('cancel-delete-btn').onclick = closeSlidein;
-  document.getElementById('confirm-delete-btn').onclick = () => {
-    storage.deleteUser(id);
-    showToast('User deleted', 'success');
-    closeSlidein();
-    renderUsersPanel();
-  };
-}
-function resetUserPin(id) {
-  const pin = Math.floor(1000+Math.random()*9000).toString();
-  storage.updateUser(id, { pinHash: simpleHash(pin) });
-  showToast(`PIN reset. New PIN: ${pin}`);
-}
-
-// --- Bookings Panel ---
-function renderBookingsPanel() {
-  const bookings = storage.getBookings();
-  const users = storage.getUsers();
-  let html = `<h2>Bookings</h2>`;
-  if (DEV_MODE) {
-    html += `<button id="seed-demo-btn">Seed Demo Data</button>`;
-  }
-  html += `<div class="calendar-toggle">
-    <button id="admin-week-toggle" class="active">Week</button>
-    <button id="admin-month-toggle">Month</button>
-  </div>
-  <div id="admin-calendar-container"></div>`;
-  html += `<div class="form-group"><label>Filter</label>
-    <select id="booking-filter">
-      <option value="all">All</option>
-      <option value="pending">Pending</option>
-      <option value="approved">Approved</option>
-      <option value="declined">Declined</option>
-      <option value="cancelled">Cancelled</option>
-    </select></div>`;
-  html += `<table class="table"><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Duration</th><th>Status</th><th>Notes</th><th>Admin Notes</th><th>Actions</th></tr></thead><tbody>`;
-  function safeDateYMD(value) {
-    const d = new Date(value);
-    return isNaN(d) ? 'Invalid date' : window.utils.formatDateYMD(d);
-  }
-  function safeTimeHM(value) {
-    const d = new Date(value);
-    return isNaN(d) ? '--:--' : window.utils.formatTimeHM(d);
-  }
-  for(const b of bookings) {
-    const user = users.find(u=>u.id===b.userId);
-    html += `<tr data-status="${b.status}">
-      <td>${safeDateYMD(b.startISO)}</td>
-      <td>${safeTimeHM(b.startISO)}–${safeTimeHM(b.endISO)}</td>
-      <td>${user ? user.name : 'Unknown'}</td>
-      <td>${b.durationMinutes/60}h</td>
-      <td>${b.status}</td>
-      <td>${b.notes||''}</td>
-      <td>${b.adminNotes||''}</td>
-      <td>
-        ${b.status==='pending'?`<button class="action-btn success" data-id="${b.id}" data-action="approve">Approve</button>`:''}
-        ${b.status==='pending'?`<button class="action-btn danger" data-id="${b.id}" data-action="decline">Decline</button>`:''}
-        ${b.status==='approved'?`<button class="action-btn danger" data-id="${b.id}" data-action="cancel">Cancel</button>`:''}
-      </td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  document.getElementById('admin-panel-bookings').innerHTML = html;
-  // Calendar toggle
-  document.getElementById('admin-week-toggle').onclick = () => {
-    adminViewMode = "week";
-    document.getElementById('admin-week-toggle').classList.add('active');
-    document.getElementById('admin-month-toggle').classList.remove('active');
-    renderAdminWeekCalendar(adminFocusDate);
-  };
-  document.getElementById('admin-month-toggle').onclick = () => {
-    adminViewMode = "month";
-    document.getElementById('admin-week-toggle').classList.remove('active');
-    document.getElementById('admin-month-toggle').classList.add('active');
-    renderAdminMonthCalendar(adminFocusDate);
-  };
-  if (adminViewMode === "month") {
-    renderAdminMonthCalendar(adminFocusDate);
-  } else {
-    renderAdminWeekCalendar(adminFocusDate);
-  }
-  // --- Admin Month Calendar ---
-  function renderAdminMonthCalendar(focusDate = adminFocusDate) {
-    const bookings = storage.getBookings();
-    const users = storage.getUsers();
-    const year = focusDate.getFullYear();
-    const month = focusDate.getMonth();
-    const firstOfMonth = new Date(year, month, 1);
-    // Compute Monday-based offset: 0=Mon, 6=Sun
-    const jsDay = firstOfMonth.getDay(); // 0=Sun..6=Sat
-    const firstDayOfWeek = (jsDay + 6) % 7; // 0=Mon..6=Sun
-    // Number of days in this month
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    let html = `<div class="admin-month-calendar">`;
-    html += `<div class="admin-month-header">
-      <button id="admin-month-prev">&lt;</button>
-      <span>${firstOfMonth.toLocaleString('default', { month: 'long' })} ${year}</span>
-      <button id="admin-month-next">&gt;</button>
-    </div>`;
-
-    // Weekday headers
-    html += '<div class="admin-month-grid">';
-    const weekdays = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    for (const wd of weekdays) html += `<div class="admin-month-dayheader">${wd}</div>`;
-
-    // Leading blanks
-    for (let i = 0; i < firstDayOfWeek; i++) html += `<div class="admin-month-cell empty"></div>`;
-
-    // Days
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      const ymd = formatDateYMD(date);
-      // Count bookings for this day
-      let approved = 0, pending = 0, blocks = 0;
-      for (const b of bookings) {
-        if (!b.startISO) continue;
-        const d = new Date(b.startISO);
-        if (isNaN(d) || d.getFullYear() !== year || d.getMonth() !== month || d.getDate() !== day) continue;
-        if (b.status === "approved" && b.userId) approved++;
-        else if (b.status === "pending") pending++;
-        else if (b.status === "approved" && !b.userId) blocks++;
-      }
-      html += `<div class="admin-month-cell" data-date="${ymd}">
-        <div class="admin-month-daynum">${day}</div>
-        <div class="admin-month-badges">
-          ${approved ? `<span class="badge badge-approved">${approved}</span>` : ""}
-          ${pending ? `<span class="badge badge-pending">${pending}</span>` : ""}
-          ${blocks ? `<span class="badge badge-block">${blocks}</span>` : ""}
-        </div>
-      </div>`;
-    }
-
-    // Trailing blanks
-    const totalCells = firstDayOfWeek + daysInMonth;
-    const trailing = (7 - (totalCells % 7)) % 7;
-    for (let i = 0; i < trailing; i++) html += `<div class="admin-month-cell empty"></div>`;
-    html += '</div>';
-    html += '</div>';
-
-    // Inject HTML before attaching event handlers
-    const calendarContainer = document.getElementById('admin-calendar-container');
-    if (!calendarContainer) return; // Defensive: container missing
-    calendarContainer.innerHTML = html;
-
-    // Prev/Next month
-    const prevBtn = document.getElementById('admin-month-prev');
-    const nextBtn = document.getElementById('admin-month-next');
-    if (prevBtn) prevBtn.onclick = () => {
-      adminFocusDate = new Date(year, month - 1, 1);
-      renderAdminMonthCalendar(adminFocusDate);
-    };
-    if (nextBtn) nextBtn.onclick = () => {
-      adminFocusDate = new Date(year, month + 1, 1);
-      renderAdminMonthCalendar(adminFocusDate);
-    };
-
-    // Day click handler
-    document.querySelectorAll('.admin-month-cell[data-date]').forEach(cell => {
-      cell.onclick = () => {
-        const date = cell.getAttribute('data-date');
-        adminFocusDate = new Date(date);
-        adminViewMode = "week";
-        document.getElementById('admin-week-toggle').classList.add('active');
-        document.getElementById('admin-month-toggle').classList.remove('active');
-        renderAdminWeekCalendar(adminFocusDate);
-      };
-    });
-  }
-  // Only bind seed button handler if DEV_MODE is enabled
-  if (DEV_MODE) {
-    const seedBtn = document.getElementById('seed-demo-btn');
-    if (seedBtn) {
-      seedBtn.onclick = () => { 
-        storage.seedDemoData(); 
-        showToast('Demo data seeded'); 
-        renderUsersPanel(); 
-        renderBookingsPanel(); 
-        renderPendingBadge(); 
-      };
-    }
-  }
-  document.getElementById('booking-filter').onchange = function() {
-    const val = this.value;
-    document.querySelectorAll('#admin-panel-bookings tbody tr').forEach(tr => {
-      tr.style.display = (val==='all'||tr.getAttribute('data-status')===val)?'':'none';
-    });
-  };
-  // Single delegated click listener for booking action buttons
-  const panel = document.getElementById('admin-panel-bookings');
-  if (panel._bookingDelegateHandler) panel.removeEventListener('click', panel._bookingDelegateHandler);
-  panel._bookingDelegateHandler = function(e) {
-    const target = e.target;
-    if (!target || !target.matches || !target.matches('button.action-btn')) return;
-    const id = target.dataset.id;
-    const action = target.dataset.action;
-    if (typeof console !== 'undefined' && console.log) console.log('booking action clicked', action, id);
-    if (action === 'approve') approveBooking(id);
-    else if (action === 'decline') declineBooking(id);
-    else if (action === 'cancel') cancelBooking(id);
-  };
-  panel.addEventListener('click', panel._bookingDelegateHandler);
-}
-
-// --- Admin Week Calendar ---
-function renderAdminWeekCalendar(focusDate = adminFocusDate) {
-  const bookings = storage.getBookings();
-  const users = storage.getUsers();
-  const settings = storage.getSettings();
-  const weekStart = getWeekStart(focusDate);
-  const days = Array.from({length: 7}, (_, i) => addDays(weekStart, i));
-  const openHM = settings.openTime.split(':').map(Number);
-  const closeHM = settings.closeTime.split(':').map(Number);
-  let closeHour = closeHM[0];
-  if (closeHour === 0) closeHour = 24;
-  const slotInterval = settings.slotIntervalMinutes;
-  
-  // Generate time slots in minutes from start
-  const startMinutes = openHM[0] * 60 + openHM[1];
-  const endMinutes = closeHour * 60;
-  const slots = [];
-  for (let m = startMinutes; m < endMinutes; m += slotInterval) {
-    slots.push(m);
-  }
-  
-  let cal = '<div class="admin-calendar-grid">';
-  // Header
-  cal += '<div class="calendar-header"></div>';
-  for (const d of days) {
-    cal += `<div class="calendar-header">${formatDateWeekday(d)}<br>${formatDateYMD(d)}</div>`;
-  }
-  // Rows
-  for (const m of slots) {
-    const h = Math.floor(m / 60);
-    const min = m % 60;
-    // Show time label for both :00 and :30
-    const timeLabel = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-    cal += `<div class="time-col">${timeLabel}</div>`;
-    for (let day = 0; day < 7; day++) {
-      const slotDate = new Date(days[day]);
-      slotDate.setHours(h, min, 0, 0);
-      const slotISO = slotDate.toISOString();
-      // Find overlapping booking (only approved or pending block slots)
-      const booking = bookings.find(b => {
-        if (b.status !== 'approved' && b.status !== 'pending') return false;
-        const bStart = new Date(b.startISO);
-        const bEnd = new Date(b.endISO);
-        return !isNaN(bStart) && !isNaN(bEnd) && slotDate >= bStart && slotDate < bEnd;
-      });
-      let cellClass = 'slot-cell';
-      let cellLabel = '';
-      let dataBookingId = '';
-      let dataHasBooking = '0';
-      if (booking) {
-        dataBookingId = booking.id;
-        dataHasBooking = '1';
-        if (booking.status === 'approved') {
-          cellClass += ' blocked';
-          cellLabel = 'Booked';
-        } else if (booking.status === 'pending') {
-          cellClass += ' tentative';
-          cellLabel = 'Pending';
-        } else if (!booking.userId) {
-          cellClass += ' blocked';
-          cellLabel = 'Blocked';
-        }
-      } else {
-        cellClass += ' available';
-        cellLabel = '';
-      }
-      cal += `<div class="${cellClass}" data-slot="${slotISO}" data-booking-id="${dataBookingId}" data-has-booking="${dataHasBooking}">${cellLabel}</div>`;
-    }
-  }
-  cal += '</div>';
-  document.getElementById('admin-calendar-container').innerHTML = cal;
-  // Attach one click handler to all .slot-cell elements
-  document.querySelectorAll('.admin-calendar-grid .slot-cell').forEach(cell => {
-    cell.onclick = function() {
-      const slotISO = cell.getAttribute('data-slot');
-      const bookingId = cell.getAttribute('data-booking-id') || null;
-      if (typeof console !== 'undefined' && console.log) console.log('admin slot click', slotISO);
-      openAdminCalendarSlot(slotISO, bookingId);
-    };
-  });
-}
-
-// --- Admin Calendar Slot Slide-in ---
-function openAdminCalendarSlot(slotISO, bookingId) {
-  const bookings = storage.getBookings();
-  const users = storage.getUsers();
-  const slotDate = new Date(slotISO);
-  let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2>${formatDateYMD(slotDate)} ${formatTimeHM(slotDate)}</h2>`;
-  let booking = null;
-  if (bookingId) {
-    booking = bookings.find(b => b.id === bookingId);
-  }
-  if (booking) {
-    const user = users.find(u => u.id === booking.userId);
-    html += `<form id="admin-edit-booking-form">
-      <div><b>User:</b> ${user ? user.name : 'Unknown'}</div>
-      <div><b>Status:</b> ${booking.status}</div>
-      <div><b>Notes:</b> ${booking.notes || ''}</div>
-      <div class="form-group">
-        <label>Admin Notes</label>
-        <textarea name="adminNotes" id="admin-notes-input">${booking.adminNotes || ''}</textarea>
-      </div>
-      <div class="form-group">
-        <label>Duration (hours)</label>
-        <select name="duration" id="edit-duration">
-          ${[...Array(8)].map((_,i)=>{
-            const hours = i+1;
-            const minutes = hours * 60;
-            const selected = minutes === booking.durationMinutes ? 'selected' : '';
-            return `<option value="${minutes}" ${selected}>${hours} hour${hours>1?'s':''}</option>`;
-          }).join('')}
-        </select>
-      </div>
-      <div class="form-actions">
-        <button type="submit">Save Changes</button>
-        <button type="button" class="danger" id="delete-btn">Delete</button>
-        ${booking.status === 'pending' ? `<button type="button" id="approve-btn">Approve</button><button type="button" id="decline-btn">Decline</button>` : ''}
-        ${booking.status === 'approved' ? `<button type="button" id="cancel-btn">Cancel</button>` : ''}
-        <button type="button" class="secondary" id="cancel-edit-btn">Close</button>
-      </div>
-    </form>`;
-  } else {
-    html += `<form id="admin-create-booking-form">
-      <div class="form-group">
-        <label>User</label>
-        <select name="userId" required>
-          <option value="">Select user</option>
-          ${users.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Duration (hours)</label>
-        <select name="duration" required>
-          ${[...Array(8)].map((_,i)=>{
-            const hours = i+1;
-            const minutes = hours * 60;
-            return `<option value="${minutes}">${hours} hour${hours>1?'s':''}</option>`;
-          }).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Notes</label>
-        <input name="notes" type="text">
-      </div>
-      <div class="form-actions">
-        <button type="submit">Create Booking</button>
-        <button type="button" class="secondary" id="cancel-create-btn">Cancel</button>
-      </div>
-    </form>`;
-  }
-  openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  if (booking) {
-    const editForm = document.getElementById('admin-edit-booking-form');
-    if (editForm) {
-      editForm.onsubmit = (e) => {
-        e.preventDefault();
-        const f = e.target;
-        const newMin = parseInt(f.duration.value, 10);
-        const newAdminNotes = f.adminNotes.value;
-        if (isNaN(newMin) || newMin < 60) {
-          showToast('Invalid duration', 'error');
-          return;
-        }
-        const newEnd = new Date(booking.startISO);
-        newEnd.setMinutes(newEnd.getMinutes() + newMin);
-        const newEndISO = newEnd.toISOString();
-        
-        // Validate no conflicts with new duration
-        const check = storage.checkBookingConflict({
-          startISO: booking.startISO,
-          endISO: newEndISO,
-          excludeId: booking.id
-        });
-        
-        if (!check.ok) {
-          if (check.conflict) {
-            const conflictStart = formatTimeHM(new Date(check.conflict.startISO));
-            const conflictDate = formatDateYMD(new Date(check.conflict.startISO));
-            showToast(`Cannot extend: conflicts with ${check.conflict.status} booking at ${conflictDate} ${conflictStart}`, 'error');
-          } else {
-            showToast(check.reason || 'Cannot update booking', 'error');
-          }
-          return;
-        }
-        
-        updateAdminBooking({
-          id: booking.id,
-          durationMinutes: newMin,
-          endISO: newEndISO,
-          adminNotes: newAdminNotes
-        });
-        closeSlidein();
-        renderBookingsPanel();
-      };
-      document.getElementById('delete-btn').onclick = () => {
-        confirmDeleteBooking(booking.id);
-      };
-      if (booking.status === 'pending') {
-        document.getElementById('approve-btn').onclick = () => { approveBooking(booking.id); closeSlidein(); };
-        document.getElementById('decline-btn').onclick = () => { declineBooking(booking.id); closeSlidein(); };
-      }
-      if (booking.status === 'approved') {
-        document.getElementById('cancel-btn').onclick = () => { cancelBooking(booking.id); closeSlidein(); };
-      }
-      document.getElementById('cancel-edit-btn').onclick = closeSlidein;
-    }
-  } else {
-    const form = document.getElementById('admin-create-booking-form');
-    if (form) {
-      form.onsubmit = (e) => {
-        e.preventDefault();
-        const f = e.target;
-        const userId = f.userId.value;
-        const duration = parseInt(f.duration.value, 10);
-        const notes = f.notes.value;
-        if (!userId || isNaN(duration) || duration < 60) {
-          showToast('Please select user and valid duration', 'error');
-          return;
-        }
-        createAdminBooking({ userId, slotDate, duration, notes });
-        closeSlidein();
-        renderBookingsPanel();
-      };
-      document.getElementById('cancel-create-btn').onclick = closeSlidein;
-    }
-  }
-
-// Helper: update booking from admin slot
-function updateAdminBooking({ id, durationMinutes, endISO, adminNotes }) {
-  storage.updateBooking(id, { durationMinutes, endISO, adminNotes });
-  showToast('Booking updated', 'success');
-}
-
-// Helper: delete booking from admin slot
-function confirmDeleteBooking(id) {
-  const booking = storage.getBookingById(id);
-  if (!booking) {
-    showToast('Booking not found', 'error');
-    return;
-  }
-  
-  const user = storage.getUserById(booking.userId);
-  
-  // Show confirmation slide-out
-  let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2 style="color: var(--danger);">⚠️ Delete Booking</h2>`;
-  html += `<div style="margin: 1.5rem 0;">
-    <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to permanently delete this booking?</p>
-    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
-      <p style="margin: 0.5rem 0;"><strong>User:</strong> ${user ? user.name : 'Unknown'}</p>
-      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
-      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
-      <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
-      ${booking.notes ? `<p style="margin: 0.5rem 0;"><strong>Notes:</strong> ${booking.notes}</p>` : ''}
-    </div>
-    <p style="color: var(--danger); font-weight: 600;">⚠️ This action cannot be undone!</p>
-  </div>`;
-  html += `<div class="form-actions">
-    <button class="danger" id="confirm-delete-booking-btn">Yes, Delete Booking</button>
-    <button class="secondary" id="cancel-delete-booking-btn">Cancel</button>
-  </div>`;
-  
-  openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.getElementById('cancel-delete-booking-btn').onclick = closeSlidein;
-  document.getElementById('confirm-delete-booking-btn').onclick = () => {
-    storage.deleteBooking(id);
-    showToast('Booking deleted', 'success');
-    closeSlidein();
-    renderBookingsPanel();
-  };
-}
-
-function deleteAdminBooking(id) {
-  storage.deleteBooking(id);
-  showToast('Booking deleted', 'success');
-}
-// Helper: create booking from admin slot
-function createAdminBooking({ userId, slotDate, duration, notes }) {
-  const startISO = slotDate.toISOString();
-  const end = new Date(slotDate);
-  end.setMinutes(end.getMinutes() + duration);
-  const endISO = end.toISOString();
-  
-  // Validate no conflicts before creating
-  const check = storage.checkBookingConflict({
-    startISO,
-    endISO,
-    excludeId: null
-  });
-  
-  if (!check.ok) {
-    if (check.conflict) {
-      const conflictStart = formatTimeHM(new Date(check.conflict.startISO));
-      const conflictDate = formatDateYMD(new Date(check.conflict.startISO));
-      showToast(`Cannot create: conflicts with ${check.conflict.status} booking at ${conflictDate} ${conflictStart}`, 'error');
-    } else {
-      showToast(check.reason || 'Cannot create booking', 'error');
-    }
-    return;
-  }
-  
-  const booking = {
-    id: 'b' + Date.now(),
-    userId,
-    startISO,
-    endISO,
-    durationMinutes: duration,
-    status: 'approved',
-    notes: notes || '',
-    adminNotes: '',
-    createdAtISO: new Date().toISOString(),
-  };
-  storage.addBooking(booking);
-  showToast('Booking created', 'success');
-}
-}
-function approveBooking(id) {
-  if (typeof console !== 'undefined' && console.log) console.log('approveBooking called', id);
-  const b = storage.getBookingById(id);
-  if (typeof console !== 'undefined' && console.log) console.log('approveBooking booking', b);
-  if (!b) { showToast('Booking not found', 'error'); return; }
-  const user = storage.getUserById(b.userId);
-  if (!user) { showToast('User not found', 'error'); return; }
-
-  // Debug: log user and booking details before weekly-limit check
-  if (typeof console !== 'undefined' && console.log) {
-    console.log('before weekly-limit check', {
-      membership: user.membership,
-      userId: user.id,
-      startISO: b.startISO,
-      currentStatus: b.status
-    });
-  }
-
-  // Main approval logic with conflict checks
-  function doApprove(isExtra) {
-    if (typeof console !== 'undefined' && console.log) console.log('doApprove called with isExtra:', isExtra);
-    
-    const settings = storage.getSettings();
-    const bookings = storage.getBookings();
-    const buffer = settings.bufferMinutes;
-    
-    // Debug: checking conflicts
-    if (typeof console !== 'undefined' && console.log) console.log('checking conflicts');
-    
-    // Check for overlap with buffer
-    for (const other of bookings) {
-      if (other.id === b.id || ['declined', 'cancelled'].includes(other.status)) continue;
-      if ((new Date(b.startISO) < addMinutes(new Date(other.endISO), buffer)) && (new Date(b.endISO) > addMinutes(new Date(other.startISO), -buffer))) {
-        if (['approved', 'pending'].includes(other.status)) {
-          if (typeof console !== 'undefined' && console.log) console.log('conflict found', other);
-          showToast('Conflicts with another booking', 'error');
-          return;
-        }
-      }
-    }
-    
-    // Debug: right before update
-    if (typeof console !== 'undefined' && console.log) {
-      console.log('updating booking to approved', { id, isExtra });
-    }
-    
-    storage.updateBooking(id, { status: 'approved', isExtra });
-    
-    // Debug: after update
-    if (typeof console !== 'undefined' && console.log) console.log('update complete');
-    
-    showToast('Booking approved', 'success');
-    renderBookingsPanel();
-    renderPendingBadge();
-    closeSlidein();
-  }
-
-  // Check weekly limit for subscribed users with pending bookings
-  if (user.membership === 'subscribed' && userHasApprovedThisWeek(user.id, b.startISO) && b.status === 'pending') {
-    if (typeof console !== 'undefined' && console.log) console.log('weekly limit triggered');
-    const ok = window.confirm('This user already has an approved booking this week. Approve anyway as an extra session?');
-    if (!ok) {
-      showToast('Approval cancelled', 'info');
-      return;
-    }
-    // User confirmed, proceed with approval as extra session
-    doApprove(true);
-    return;
-  }
-  
-  // Normal approval
-  doApprove(false);
-}
-function declineBooking(id) {
-  storage.updateBooking(id, { status: 'declined' });
-  showToast('Booking declined', 'success');
-  renderBookingsPanel();
-  renderPendingBadge();
-}
-function cancelBooking(id) {
-  showConfirmDialog({
-    title: 'Cancel Booking',
-    message: 'Cancel this booking? This cannot be undone.',
-    onConfirm: () => {
-      storage.updateBooking(id, { status: 'cancelled' });
-      showToast('Booking cancelled', 'success');
+  document.getElementById('confirm-delete-btn').onclick = async () => {
+    try {
+      await storage.deleteBooking(bookingId);
+      showToast('Booking deleted', 'success');
+      closeSlidein();
       renderBookingsPanel();
-      renderPendingBadge();
+    } catch (error) {
+      showToast(error.message || 'Failed to delete booking', 'error');
     }
-  });
-}
-function userHasApprovedThisWeek(userId, refDateISO) {
-  const bookings = storage.getBookings();
-  const refDate = refDateISO ? new Date(refDateISO) : new Date();
-  const weekStart = getWeekStart(refDate);
-  const weekEnd = addDays(weekStart, 7);
-  return bookings.some(b => b.userId === userId && b.status === 'approved' && (!b.isExtra) && new Date(b.startISO) >= weekStart && new Date(b.startISO) < weekEnd);
-}
-
-// --- Settings Panel ---
-function renderSettingsPanel() {
-  const settings = storage.getSettings();
-  let html = `<h2>System Settings</h2>
-    <form id="settings-form">
-      <div class="form-group">
-        <label>Timezone</label>
-        <input name="timezone" value="${settings.timezone}" readonly>
-      </div>
-      <div class="form-group">
-        <label>Open Time</label>
-        <input name="openTime" value="${settings.openTime}" readonly>
-      </div>
-      <div class="form-group">
-        <label>Close Time</label>
-        <input name="closeTime" value="${settings.closeTime}" readonly>
-      </div>
-      <div class="form-group">
-        <label>Buffer Minutes</label>
-        <input name="bufferMinutes" value="${settings.bufferMinutes}" readonly>
-      </div>
-      <div class="form-group">
-        <label>Slot Interval (minutes)</label>
-        <input name="slotIntervalMinutes" value="${settings.slotIntervalMinutes}" readonly>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="danger" id="reset-btn">Reset Data</button>
-      </div>
-    </form>`;
-  document.getElementById('admin-panel-settings').innerHTML = html;
-  document.getElementById('reset-btn').onclick = () => {
-    showConfirmDialog({
-      title: 'Reset All Data',
-      message: 'This will erase all users and bookings. Continue?',
-      onConfirm: () => { storage.resetAll(); showToast('Data reset'); location.reload(); }
-    });
   };
 }
 
+// ============================================================
+// SETTINGS PANEL
+// ============================================================
 
-// --- Init ---
-function initAdmin() {
-  if (!adminLoggedIn) renderAdminLogin();
-  else renderAdminApp();
+function renderSettingsPanel() {
+  const panel = document.getElementById('admin-panel-settings');
+  const settings = storage.getSettings();
+  
+  let html = `
+    <div class="panel-header">
+      <h2>System Settings</h2>
+    </div>
+    <form id="settings-form" class="settings-form">
+      <div class="form-group">
+        <label for="open-time">Business Hours Start</label>
+        <input type="time" id="open-time" value="${settings.openTime}" required>
+      </div>
+      <div class="form-group">
+        <label for="close-time">Business Hours End</label>
+        <input type="time" id="close-time" value="${settings.closeTime}" required>
+      </div>
+      <div class="form-group">
+        <label for="buffer-minutes">Buffer Between Bookings (minutes)</label>
+        <input type="number" id="buffer-minutes" value="${settings.bufferMinutes}" min="0" max="120" step="15" required>
+      </div>
+      <div class="form-group">
+        <label for="slot-interval">Booking Slot Interval (minutes)</label>
+        <select id="slot-interval" required>
+          <option value="30" ${settings.slotIntervalMinutes === 30 ? 'selected' : ''}>30 minutes</option>
+          <option value="60" ${settings.slotIntervalMinutes === 60 ? 'selected' : ''}>60 minutes</option>
+        </select>
+      </div>
+      <button type="submit" class="primary">Save Settings</button>
+    </form>
+  `;
+  
+  panel.innerHTML = html;
+  document.getElementById('settings-form').onsubmit = handleSaveSettings;
 }
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initAdmin);
-} else {
-  initAdmin();
+
+async function handleSaveSettings(e) {
+  e.preventDefault();
+  
+  const openTime = document.getElementById('open-time').value;
+  const closeTime = document.getElementById('close-time').value;
+  const bufferMinutes = parseInt(document.getElementById('buffer-minutes').value);
+  const slotIntervalMinutes = parseInt(document.getElementById('slot-interval').value);
+  
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Saving...';
+  
+  try {
+    await storage.setSettings({
+      openTime,
+      closeTime,
+      bufferMinutes,
+      slotIntervalMinutes
+    });
+    
+    showToast('Settings saved', 'success');
+    submitBtn.textContent = 'Save Settings';
+  } catch (error) {
+    showToast(error.message || 'Failed to save settings', 'error');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Save Settings';
+  }
 }
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+async function init() {
+  try {
+    // Load all data
+    await storage.loadAll();
+    
+    // Check admin access
+    const hasAccess = await checkAdminAccess();
+    
+    if (hasAccess) {
+      // Bind navigation
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.onclick = () => switchPanel(btn.getAttribute('data-panel'));
+      });
+      
+      // Bind logout
+      document.getElementById('logout-btn').onclick = handleLogout;
+      
+      // Render initial panel
+      switchPanel(currentPanel);
+    } else {
+      // Bind login form
+      const loginForm = document.getElementById('admin-login-form');
+      if (loginForm) {
+        loginForm.onsubmit = handleAdminLogin;
+      }
+    }
+  } catch (error) {
+    console.error('Initialization error:', error);
+    showToast('Failed to load admin dashboard', 'error');
+  }
+}
+
+// Start the app
+document.addEventListener('DOMContentLoaded', async () => {
+  await checkMagicLinkRedirect();
+  await init();
+});
+
 })();

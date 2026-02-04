@@ -1,383 +1,483 @@
+// ============================================================
+// APP.JS - Public Booking UI (Magic Link Auth)
+// Invite-only access with Supabase Auth
+// ============================================================
+
 (() => {
-// app.js - Public booking UI logic for Studio94
-// Handles login, calendar rendering, booking form, and user session
+'use strict';
 
 const {
-  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
-  simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein
+  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween,
+  showToast, openSlidein, closeSlidein
 } = window.utils;
-const {
-  getSettings, getUsers, getUserByEmail, getUserById, getBookings, addBooking, checkBookingConflict
-} = window.storage;
+
+const storage = window.storage;
 
 let currentUser = null;
 let currentWeekStart = getWeekStart(new Date());
+let isCheckingMagicLink = false;
 
-// --- User Auth ---
+// ============================================================
+// AUTH & USER BAR
+// ============================================================
+
 function renderUserBar() {
-
   const bar = document.getElementById('user-bar');
+  
   if (!currentUser) {
     bar.innerHTML = `
       <form id="login-form" class="login-form">
-        <input type="email" id="login-email" placeholder="Email" required autocomplete="username">
-        <input type="password" id="login-pin" placeholder="PIN" required autocomplete="current-password" maxlength="8">
-        <button type="submit">Login</button>
+        <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+        <button type="submit" id="login-submit-btn">Send Login Link</button>
       </form>
+      <span id="login-status" class="login-status"></span>
     `;
-    document.getElementById('login-form').onsubmit = loginSubmit;
+    
+    const form = document.getElementById('login-form');
+    form.onsubmit = handleMagicLinkRequest;
   } else {
-    const badge = (currentUser.membership === 'subscribed' && userHasApprovedThisWeek())
-      ? '<span class="activity-badge" title="Weekly booking used">1/1</span>' : '';
+    const profile = storage.getProfiles().find(p => p.user_id === currentUser.id);
+    const displayName = profile?.name || currentUser.email.split('@')[0];
+    const membership = profile?.membership || 'standard';
+    
+    // Check if user has used weekly limit
+    let badge = '';
+    if (membership === 'subscribed') {
+      const thisWeek = getISOWeek(new Date());
+      const approvedThisWeek = storage.getBookings().filter(b =>
+        b.userId === currentUser.id &&
+        b.status === 'approved' &&
+        getISOWeek(new Date(b.startISO)) === thisWeek
+      ).length;
+      
+      if (approvedThisWeek >= 1) {
+        badge = '<span class="activity-badge" title="Weekly booking used">1/1</span>';
+      }
+    }
+    
     bar.innerHTML = `
-      <span>Logged in as <b>${currentUser.name}</b> <span class="user-type">(${currentUser.membership})</span> ${badge}</span>
-      <button id="my-bookings-btn">My bookings</button>
+      <span>Logged in as <b>${displayName}</b> <span class="user-type">(${membership})</span> ${badge}</span>
+      <button id="my-bookings-btn">My Bookings</button>
       <button id="logout-btn">Logout</button>
     `;
-    document.getElementById('logout-btn').onclick = () => { currentUser = null; renderUserBar(); renderCalendar(); };
+    
+    document.getElementById('logout-btn').onclick = handleLogout;
     document.getElementById('my-bookings-btn').onclick = openMyBookingsPanel;
-  // --- My Bookings Slide-in ---
-  function openMyBookingsPanel() {
-    function safeDateYMD(value) {
-      const d = new Date(value);
-      return isNaN(d) ? 'Invalid date' : formatDateYMD(d);
-    }
-    function safeTimeHM(value) {
-      const d = new Date(value);
-      return isNaN(d) ? '--:--' : formatTimeHM(d);
-    }
-    const bookings = getBookings().filter(b => b.userId === currentUser.id).sort((a, b) => {
-      const da = new Date(a.startISO), db = new Date(b.startISO);
-      if (isNaN(da) && isNaN(db)) return 0;
-      if (isNaN(da)) return 1;
-      if (isNaN(db)) return -1;
-      return da - db;
-    });
-    let html = `<button class="close-btn" aria-label="Close">×</button>`;
-    html += `<h2>My Bookings</h2>`;
-    if (bookings.length === 0) {
-      html += `<div>No bookings found.</div>`;
-    } else {
-      html += `<ul class="my-bookings-list">`;
-      for (const b of bookings) {
-        html += `<li>
-          <b>${safeDateYMD(b.startISO)}</b> ${safeTimeHM(b.startISO)}–${safeTimeHM(b.endISO)}
-          <span class="status">${b.status}</span>
-          ${b.notes ? `<div class="notes">${b.notes}</div>` : ''}
-          ${(b.status === 'pending' || b.status === 'approved') ? `<button class="cancel-booking-btn" data-id="${b.id}">Cancel</button>` : ''}
-        </li>`;
-      }
-      html += `</ul>`;
-    }
-    openSlidein(html);
-    document.querySelector('.close-btn').onclick = closeSlidein;
-    document.querySelectorAll('.cancel-booking-btn').forEach(btn => {
-      btn.onclick = () => cancelMyBooking(btn.getAttribute('data-id'));
-    });
   }
+}
 
-  function cancelMyBooking(id) {
-    const booking = getBookings().find(b => b.id === id);
-    if (!booking) {
-      showToast('Booking not found', 'error');
-      return;
-    }
+async function handleMagicLinkRequest(e) {
+  e.preventDefault();
+  
+  const emailInput = document.getElementById('login-email');
+  const submitBtn = document.getElementById('login-submit-btn');
+  const statusEl = document.getElementById('login-status');
+  const email = emailInput.value.trim();
+  
+  // Disable form
+  emailInput.disabled = true;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Sending...';
+  statusEl.textContent = '';
+  
+  try {
+    await storage.requestMagicLink(email);
     
-    // Show confirmation slide-out
-    let html = `<button class="close-btn" aria-label="Close">×</button>`;
-    html += `<h2 style="color: var(--danger);">⚠️ Cancel Booking</h2>`;
-    html += `<div style="margin: 1.5rem 0;">
-      <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to cancel this booking?</p>
-      <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
-        <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
-        <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
-        <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+    // Success
+    statusEl.innerHTML = `
+      <div style="color: var(--success); margin-top: 1rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: var(--radius-md);">
+        ✓ Check your email!<br>
+        <small>Click the login link to continue.</small>
       </div>
-      <p style="color: var(--text-muted);">You can request a new booking anytime.</p>
-    </div>`;
-    html += `<div class="form-actions">
-      <button class="danger" id="confirm-cancel-btn">Yes, Cancel Booking</button>
-      <button class="secondary" id="back-cancel-btn">Go Back</button>
-    </div>`;
+    `;
+    emailInput.value = '';
+  } catch (error) {
+    // Error (either not invited or server error)
+    statusEl.innerHTML = `
+      <div style="color: var(--danger); margin-top: 1rem; padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: var(--radius-md);">
+        ${error.message || 'Failed to send login link'}
+      </div>
+    `;
+  } finally {
+    // Re-enable form
+    emailInput.disabled = false;
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Send Login Link';
+  }
+}
+
+async function handleLogout() {
+  await storage.signOut();
+  currentUser = null;
+  renderUserBar();
+  renderCalendar();
+  showToast('Logged out');
+}
+
+// Check for magic link redirect on page load
+async function checkMagicLinkRedirect() {
+  if (isCheckingMagicLink) return;
+  isCheckingMagicLink = true;
+  
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+  const accessToken = hashParams.get('access_token');
+  
+  if (accessToken) {
+    showToast('Logging in...');
     
-    openSlidein(html);
-    document.querySelector('.close-btn').onclick = closeSlidein;
-    document.getElementById('back-cancel-btn').onclick = () => {
-      closeSlidein();
-      showMyBookings(); // Return to bookings list
-    };
-    document.getElementById('confirm-cancel-btn').onclick = () => {
-      window.storage.updateBooking(id, { status: 'cancelled' });
+    // Clear the hash
+    window.history.replaceState(null, '', window.location.pathname);
+    
+    // Wait for auth to process
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await init();
+  }
+}
+
+// ============================================================
+// MY BOOKINGS PANEL
+// ============================================================
+
+function openMyBookingsPanel() {
+  const bookings = storage.getBookings()
+    .filter(b => b.userId === currentUser.id)
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>My Bookings</h2>`;
+  
+  if (bookings.length === 0) {
+    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No bookings found.</div>`;
+  } else {
+    html += `<ul class="my-bookings-list">`;
+    for (const b of bookings) {
+      const statusClass = b.status === 'approved' ? 'approved' :
+                         b.status === 'declined' ? 'declined' :
+                         b.status === 'cancelled' ? 'cancelled' : 'pending';
+      
+      html += `<li>
+        <b>${formatDateYMD(new Date(b.startISO))}</b> 
+        ${formatTimeHM(new Date(b.startISO))}–${formatTimeHM(new Date(b.endISO))}
+        <span class="status status-${statusClass}">${b.status}</span>
+        ${b.userNotes ? `<div class="notes">Note: ${b.userNotes}</div>` : ''}
+        ${b.adminNotes ? `<div class="admin-notes">Admin: ${b.adminNotes}</div>` : ''}
+        ${b.status === 'pending' ? `<button class="cancel-booking-btn" data-id="${b.id}">Cancel</button>` : ''}
+      </li>`;
+    }
+    html += `</ul>`;
+  }
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  
+  document.querySelectorAll('.cancel-booking-btn').forEach(btn => {
+    btn.onclick = () => confirmCancelBooking(btn.getAttribute('data-id'));
+  });
+}
+
+function confirmCancelBooking(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">⚠️ Cancel Booking</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to cancel this booking?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+    </div>
+    <p style="color: var(--text-muted);">You can request a new booking anytime.</p>
+  </div>`;
+  html += `<div class="form-actions">
+    <button class="danger" id="confirm-cancel-btn">Yes, Cancel Booking</button>
+    <button class="secondary" id="back-cancel-btn">Go Back</button>
+  </div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.getElementById('back-cancel-btn').onclick = () => {
+    closeSlidein();
+    openMyBookingsPanel();
+  };
+  document.getElementById('confirm-cancel-btn').onclick = async () => {
+    try {
+      await storage.cancelBooking(bookingId);
       showToast('Booking cancelled', 'success');
       closeSlidein();
       renderCalendar();
-    };
-  }
-  }
-}
-function loginSubmit(e) {
-  e.preventDefault();
-  const email = document.getElementById('login-email').value.trim();
-  const pin = document.getElementById('login-pin').value.trim();
-  const user = getUserByEmail(email);
-  if (!user || user.pinHash !== simpleHash(pin)) {
-    showToast('Invalid email or PIN', 'error');
-    return;
-  }
-  currentUser = user;
-  renderUserBar();
-  renderCalendar();
-  showToast('Logged in!');
+    } catch (error) {
+      showToast(error.message || 'Failed to cancel booking', 'error');
+    }
+  };
 }
 
-// --- Calendar Logic ---
-// Sanity check: booking at 10:30 for 3h should cover 6 half-hour slots until 13:30.
-// Buffer=30min blocks a booking starting at 13:30 if another ends at 13:00.
+// ============================================================
+// CALENDAR RENDERING
+// ============================================================
+
 function renderCalendar() {
   const grid = document.getElementById('calendar-grid');
-  const settings = getSettings();
-  const bookings = getBookings();
+  const settings = storage.getSettings();
+  const bookings = storage.getBookings();
+  
   const weekStart = currentWeekStart;
-  const days = Array.from({length:7}, (_,i)=>addDays(weekStart,i));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  
+  // Parse business hours
   const openHM = settings.openTime.split(':').map(Number);
   const closeHM = settings.closeTime.split(':').map(Number);
   let closeHour = closeHM[0];
   if (closeHour === 0) closeHour = 24;
-  const slotInterval = settings.slotIntervalMinutes;
   
-  // Generate time slots in minutes from start
+  const slotInterval = settings.slotIntervalMinutes;
   const startMinutes = openHM[0] * 60 + openHM[1];
   const endMinutes = closeHour * 60;
-  const slots = [];
+  
+  // Generate time slots
+  const timeSlots = [];
   for (let m = startMinutes; m < endMinutes; m += slotInterval) {
-    slots.push(m);
+    timeSlots.push(m);
   }
   
-  // Header
-  let html = '<div class="calendar-header"></div>';
-  for(const d of days) {
-    html += `<div class="calendar-header">${formatDateWeekday(d)}<br>${formatDateYMD(d)}</div>`;
+  // Render grid
+  let html = '<div class="calendar-wrapper">';
+  
+  // Header row (days)
+  html += '<div class="calendar-header">';
+  html += '<div class="time-col"></div>';
+  for (const day of days) {
+    const isToday = formatDateYMD(day) === formatDateYMD(new Date());
+    html += `<div class="day-header ${isToday ? 'today' : ''}">
+      <div class="day-name">${formatDateWeekday(day)}</div>
+      <div class="day-date">${day.getDate()}</div>
+    </div>`;
   }
-  // Rows
+  html += '</div>';
+  
+  // Time slots
   const now = new Date();
-  for(const m of slots) {
-    const h = Math.floor(m / 60);
-    const min = m % 60;
-    // Show time label for both :00 and :30
-    const timeLabel = `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
-    html += `<div class="time-col">${timeLabel}</div>`;
-    for(let day=0; day<7; day++) {
-      const slotDate = new Date(days[day]);
-      slotDate.setHours(h, min, 0, 0);
+  
+  for (const minutes of timeSlots) {
+    html += '<div class="time-row">';
+    
+    // Time label
+    const hour = Math.floor(minutes / 60);
+    const min = minutes % 60;
+    html += `<div class="time-label">${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}</div>`;
+    
+    // Day slots
+    for (const day of days) {
+      const slotDate = new Date(day);
+      slotDate.setHours(hour, min, 0, 0);
       const slotISO = slotDate.toISOString();
       
-      // Check if slot is in the past
+      // Check if in past (disable for users)
       const isPast = slotDate < now;
       
-      const slotStatus = getSlotStatus(slotDate, bookings, settings);
-      let cellClass = 'slot-cell';
-      let cellLabel = '';
+      // Check booking status
+      let slotClass = 'slot-cell available';
+      let slotData = '';
       
       if (isPast) {
-        // Past slots are blocked and not clickable for users
-        cellClass += ' blocked past';
-        cellLabel = '';
-      } else if (slotStatus.blocked) {
-        cellClass += ' blocked';
-        cellLabel = slotStatus.label;
-      } else if (slotStatus.tentative) {
-        cellClass += ' tentative';
-        cellLabel = slotStatus.label;
+        slotClass = 'slot-cell past';
       } else {
-        cellClass += ' available';
-        cellLabel = '';
+        const booking = bookings.find(b => {
+          const start = new Date(b.startISO);
+          const end = new Date(b.endISO);
+          return slotDate >= start && slotDate < end;
+        });
+        
+        if (booking) {
+          if (booking.status === 'approved') {
+            slotClass = 'slot-cell booked';
+          } else if (booking.status === 'pending') {
+            slotClass = 'slot-cell pending';
+          }
+          // declined/cancelled slots are treated as available
+        }
+        
+        slotData = `data-date="${slotISO}"`;
       }
-      html += `<div class="${cellClass}" data-slot="${slotISO}">${cellLabel}</div>`;
+      
+      html += `<div class="${slotClass}" ${slotData}></div>`;
     }
+    
+    html += '</div>';
   }
+  
+  html += '</div>';
   grid.innerHTML = html;
-  // Click handlers - only for available slots (not past)
-  document.querySelectorAll('.slot-cell.available:not(.past)').forEach(cell => {
-    cell.onclick = () => {
-      if (typeof console !== 'undefined' && console.log) console.log('slot click', cell.getAttribute('data-slot'));
-      onSlotClick(cell.getAttribute('data-slot'));
-    };
-  });
-  document.getElementById('week-label').textContent = `Week ${getISOWeek(weekStart)} (${formatDateYMD(weekStart)})`;
-}
-
-function getSlotStatus(slotDate, bookings, settings) {
-  // Returns {blocked, tentative, label}
-  const slotISO = slotDate.toISOString();
-  let blocked = false, tentative = false, label = '';
-  for(const b of bookings) {
-    if (b.status === 'declined' || b.status === 'cancelled') continue;
-    const bStart = new Date(b.startISO);
-    const bEnd = new Date(b.endISO);
-    const buffer = settings.bufferMinutes;
-    if (slotDate >= addMinutes(bStart, -buffer) && slotDate < addMinutes(bEnd, buffer)) {
-      if (b.status === 'approved') { blocked = true; label = 'Booked'; break; }
-      if (b.status === 'pending') { tentative = true; label = 'Pending'; }
-    }
+  
+  // Bind click events only to available slots
+  if (currentUser) {
+    document.querySelectorAll('.slot-cell.available[data-date]').forEach(cell => {
+      cell.onclick = () => openBookingPanel(cell.getAttribute('data-date'));
+    });
   }
-  return { blocked, tentative, label };
 }
 
-function onSlotClick(slotISO) {
+// ============================================================
+// BOOKING PANEL
+// ============================================================
+
+function openBookingPanel(startISO) {
   if (!currentUser) {
-    showToast('Please log in to book.', 'error');
+    showToast('Please log in to book', 'error');
     return;
   }
-  openBookingPanel(slotISO);
-}
-
-function openBookingPanel(slotISO) {
-  const settings = getSettings();
-  const bookings = getBookings();
-  const slotDate = new Date(slotISO);
+  
+  const startDate = new Date(startISO);
+  
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2>Book ${formatDateWeekday(slotDate)} ${formatTimeHM(slotDate)}</h2>`;
-  html += `<form id="booking-form">
+  html += `<h2>Request Booking</h2>`;
+  html += `<form id="booking-form" class="booking-form">
     <div class="form-group">
-      <label for="duration">Duration (hours)</label>
-      <select id="duration" name="duration">
-        ${[...Array(8)].map((_,i)=>`<option value="${i+1}">${i+1} hour${i>0?'s':''}</option>`).join('')}
+      <label>Date & Time</label>
+      <input type="text" value="${formatDateYMD(startDate)} ${formatTimeHM(startDate)}" disabled>
+    </div>
+    <div class="form-group">
+      <label for="booking-duration">Duration</label>
+      <select id="booking-duration" required>
+        <option value="60">1 hour</option>
+        <option value="120">2 hours</option>
+        <option value="180">3 hours</option>
+        <option value="240">4 hours</option>
+        <option value="300">5 hours</option>
+        <option value="360">6 hours</option>
+        <option value="420">7 hours</option>
+        <option value="480">8 hours</option>
       </select>
     </div>
     <div class="form-group">
-      <label for="notes">Notes for admin (optional)</label>
-      <textarea id="notes" name="notes" maxlength="200"></textarea>
-    </div>
-    <div class="form-group">
-      <div id="end-time-preview"></div>
-      <div id="booking-warning" class="error-msg"></div>
+      <label for="booking-notes">Notes (optional)</label>
+      <textarea id="booking-notes" rows="3" placeholder="Any special requests or notes..."></textarea>
     </div>
     <div class="form-actions">
-      <button type="submit">Request Booking</button>
-      <button type="button" class="secondary" id="cancel-btn">Cancel</button>
+      <button type="submit" class="primary">Submit Request</button>
+      <button type="button" class="secondary" id="cancel-booking-form">Cancel</button>
     </div>
   </form>`;
+  
   openSlidein(html);
+  
   document.querySelector('.close-btn').onclick = closeSlidein;
-  document.getElementById('cancel-btn').onclick = closeSlidein;
-  const durationSel = document.getElementById('duration');
-  durationSel.onchange = () => updateBookingPreview(slotDate, bookings, settings);
-  updateBookingPreview(slotDate, bookings, settings);
-  document.getElementById('booking-form').onsubmit = (e) => submitBooking(e, slotDate, bookings, settings);
+  document.getElementById('cancel-booking-form').onclick = closeSlidein;
+  document.getElementById('booking-form').onsubmit = (e) => submitBookingRequest(e, startISO);
 }
 
-function updateBookingPreview(slotDate, bookings, settings) {
-  const duration = parseInt(document.getElementById('duration').value);
-  const endDate = addMinutes(slotDate, duration * 60);
-  document.getElementById('end-time-preview').textContent = `End time: ${formatTimeHM(endDate)}`;
-  const warning = getBookingConflictWarning(slotDate, endDate, bookings, settings);
-  document.getElementById('booking-warning').textContent = warning || '';
-}
-
-function getBookingConflictWarning(start, end, bookings, settings) {
-  // Check for buffer, overlap, and cap
-  const buffer = settings.bufferMinutes;
-  const slotInterval = settings.slotIntervalMinutes;
-  const closeHM = settings.closeTime.split(':').map(Number);
-  let closeHour = closeHM[0];
-  if (closeHour === 0) closeHour = 24;
-  const closeDate = new Date(start);
-  closeDate.setHours(closeHour,0,0,0);
-  if (end > closeDate) return 'Booking exceeds closing time.';
-  for(const b of bookings) {
-    if (b.status === 'declined' || b.status === 'cancelled') continue;
-    const bStart = new Date(b.startISO);
-    const bEnd = new Date(b.endISO);
-    if ((start < addMinutes(bEnd, buffer)) && (end > addMinutes(bStart, -buffer))) {
-      return b.status === 'approved' ? 'Conflicts with approved booking.' : 'Conflicts with pending booking.';
-    }
-  }
-  // Weekly cap for subscribed users removed: allow multiple requests per week
-  return '';
-}
-
-function submitBooking(e, slotDate, bookings, settings) {
+async function submitBookingRequest(e, startISO) {
   e.preventDefault();
-  const duration = parseInt(document.getElementById('duration').value);
-  const endDate = addMinutes(slotDate, duration * 60);
   
-  // Use centralized conflict validation
-  const check = checkBookingConflict({
-    startISO: slotDate.toISOString(),
-    endISO: endDate.toISOString(),
-    excludeId: null
-  });
+  const durationMinutes = parseInt(document.getElementById('booking-duration').value);
+  const notes = document.getElementById('booking-notes').value.trim();
   
-  if (!check.ok) {
-    if (check.conflict) {
-      const conflictStart = formatTimeHM(new Date(check.conflict.startISO));
-      const conflictDate = formatDateYMD(new Date(check.conflict.startISO));
-      showToast(`Conflicts with ${check.conflict.status} booking at ${conflictDate} ${conflictStart}`, 'error');
-    } else {
-      showToast(check.reason || 'Booking conflict', 'error');
-    }
-    return;
+  const startDate = new Date(startISO);
+  const endDate = addMinutes(startDate, durationMinutes);
+  const endISO = endDate.toISOString();
+  
+  // Disable form
+  const submitBtn = e.target.querySelector('button[type="submit"]');
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting...';
+  
+  try {
+    // Request booking via RPC (server validates everything)
+    await storage.requestBooking(startISO, endISO, notes);
+    
+    showToast('Booking request submitted! Waiting for admin approval.', 'success');
+    closeSlidein();
+    renderCalendar();
+  } catch (error) {
+    // Server returned validation error
+    showToast(error.message || 'Failed to create booking', 'error');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit Request';
   }
+}
+
+// ============================================================
+// WEEK NAVIGATION
+// ============================================================
+
+function updateWeekLabel() {
+  const weekNum = getISOWeek(currentWeekStart);
+  const year = currentWeekStart.getFullYear();
+  const weekEnd = addDays(currentWeekStart, 6);
   
-  const notes = document.getElementById('notes').value.trim();
-  const now = new Date();
-  addBooking({
-    id: 'b'+now.getTime(),
-    userId: currentUser.id,
-    startISO: slotDate.toISOString(),
-    endISO: endDate.toISOString(),
-    durationMinutes: duration*60,
-    notes,
-    status: 'pending',
-    createdAtISO: now.toISOString(),
-    updatedAtISO: now.toISOString()
-  });
-  closeSlidein();
-  renderCalendar();
-  showToast('Booking request submitted!', 'success');
+  document.getElementById('week-label').textContent = 
+    `Week ${weekNum}, ${year} (${formatDateYMD(currentWeekStart)} – ${formatDateYMD(weekEnd)})`;
 }
 
-function userHasApprovedThisWeek() {
-  if (!currentUser) return false;
-  const bookings = getBookings();
-  const weekStart = currentWeekStart;
-  const weekEnd = addDays(weekStart, 7);
-  return bookings.some(b => b.userId === currentUser.id && b.status === 'approved' && new Date(b.startISO) >= weekStart && new Date(b.startISO) < weekEnd);
-}
-
-// --- Week Navigation ---
 function bindWeekNav() {
-  const prev = document.getElementById('prev-week');
-  const next = document.getElementById('next-week');
-  const today = document.getElementById('today-btn');
+  const prevBtn = document.getElementById('prev-week');
+  const nextBtn = document.getElementById('next-week');
+  const todayBtn = document.getElementById('today-btn');
   
-  if (prev) {
-    prev.onclick = () => {
-      const newWeekStart = addDays(currentWeekStart, -7);
-      const thisWeekStart = getWeekStart(new Date());
-      // Don't allow going to past weeks
-      if (newWeekStart >= thisWeekStart) {
-        currentWeekStart = newWeekStart;
-        renderCalendar();
-      } else {
-        showToast('Cannot view past weeks', 'info');
-      }
-    };
-  }
+  prevBtn.onclick = () => {
+    // Don't allow navigating to past weeks for users
+    const newWeekStart = addDays(currentWeekStart, -7);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (newWeekStart < today) {
+      showToast('Cannot view past weeks', 'error');
+      return;
+    }
+    
+    currentWeekStart = newWeekStart;
+    updateWeekLabel();
+    renderCalendar();
+  };
   
-  if (next) next.onclick = () => { currentWeekStart = addDays(currentWeekStart, 7); renderCalendar(); };
-  if (today) today.onclick = () => { currentWeekStart = getWeekStart(new Date()); renderCalendar(); };
+  nextBtn.onclick = () => {
+    currentWeekStart = addDays(currentWeekStart, 7);
+    updateWeekLabel();
+    renderCalendar();
+  };
+  
+  todayBtn.onclick = () => {
+    currentWeekStart = getWeekStart(new Date());
+    updateWeekLabel();
+    renderCalendar();
+  };
 }
 
-// --- Init ---
-function init() {
-  renderUserBar();
-  renderCalendar();
-  bindWeekNav();
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
+async function init() {
+  try {
+    // Load all data (initializes auth)
+    await storage.loadAll();
+    
+    // Get current user
+    currentUser = storage.getCurrentUser();
+    
+    // Render UI
+    renderUserBar();
+    updateWeekLabel();
+    renderCalendar();
+    bindWeekNav();
+    
+    if (currentUser) {
+      showToast(`Welcome back, ${currentUser.email.split('@')[0]}!`);
+    }
+  } catch (error) {
+    console.error('Initialization error:', error);
+    showToast('Failed to load application', 'error');
+  }
 }
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
+
+// Start the app
+document.addEventListener('DOMContentLoaded', async () => {
+  await checkMagicLinkRedirect();
+  await init();
+});
+
 })();

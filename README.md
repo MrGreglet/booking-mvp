@@ -1,239 +1,430 @@
 # Studio94 Booking System
 
-A modern, responsive booking calendar system built with vanilla JavaScript and Supabase, featuring a glassmorphism dark theme and real-time data synchronization across all devices.
+**Invite-only booking platform with passwordless magic link authentication and enterprise-grade security.**
+
+Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorphism dark theme and real-time data synchronization.
+
+---
+
+## 🔐 Security-First Architecture
+
+- **Invite-Only Access**: Only pre-approved emails can log in
+- **Magic Link Auth**: No passwords to remember or steal
+- **Server-Side Validation**: All booking rules enforced by PostgreSQL functions
+- **Row Level Security (RLS)**: Database-level access control
+- **Edge Function Gateway**: Validates invites before sending magic links
+
+---
 
 ## Features
 
-### User Features
-- **Week Calendar View**: Browse available time slots by week
-- **30-Minute Slots**: Book sessions starting on the hour or half-hour
-- **Real-time Availability**: See booked, pending, and available slots
-- **User Authentication**: Secure login with email and PIN
-- **Booking Management**: View and manage your bookings
-- **Buffer Time**: Automatic 30-minute buffer between sessions
+### 🎟️ Invite System (Admin)
+- **Invite Management**: Add/remove user email access
+- **Admin Control**: Only admins can invite new users
+- **Real-time Updates**: Invites sync across all devices
+- **Audit Trail**: Track who invited whom
 
-### Admin Features
-- **Admin Dashboard**: Manage users, bookings, and settings
-- **Week & Month Views**: Toggle between calendar views
+### 👤 User Experience
+- **Passwordless Login**: Enter email → receive magic link → logged in
+- **Week Calendar View**: Browse available time slots
+- **Instant Booking**: Request bookings with optional notes
+- **My Bookings**: View all your bookings (pending, approved, declined)
+- **Status Tracking**: Real-time booking status updates
+- **Cancel Requests**: Cancel pending bookings anytime
+- **Mobile Optimized**: Works perfectly on phones and tablets
+
+### 🛠️ Admin Dashboard
+- **4-Tab Interface**: Invites | Profiles | Bookings | Settings
+- **Invite Management**: Add/remove user access
+- **Profile Editor**: Manage user memberships and contracts
 - **Booking Approval**: Approve, decline, or cancel bookings
-- **User Management**: Add/edit users, manage memberships
-- **Weekly Limits**: Track subscribed user booking limits
-- **Manual Booking**: Create bookings directly from admin calendar
+- **Conflict Detection**: Automatic overlap prevention
+- **Weekly Limits**: Enforce booking quotas for subscribed users
 - **Admin Notes**: Add internal notes to bookings
+- **Settings Control**: Configure business hours, buffers, and intervals
 
-### Technical Features
-- **Supabase Backend**: Cloud-based PostgreSQL database for data persistence
-- **Real-time Sync**: Data syncs instantly across all devices (PC, mobile, tablet)
-- **Sticky Calendar Headers**: Day/date headers stay visible while scrolling
-- **Mobile Responsive**: Optimized for desktop, tablet, and mobile
-- **Conflict Detection**: Prevents overlapping bookings with buffer validation
-- **Past Booking Prevention**: Users cannot view or book past time slots
-- **Prominent PIN Display**: Clear 4-digit PIN shown when creating users
+### 🔒 Server-Enforced Rules
+- **Duration Rules**: 1-12 hours, multiple of 30 minutes
+- **Buffer Enforcement**: 30-minute minimum gap between bookings
+- **Weekly Limits**: Max 1 booking/week for subscribed users
+- **Conflict Prevention**: Server validates all booking overlaps
+- **Invite Validation**: Only invited emails can create bookings
+
+### 🚀 Technical Highlights
+- **Supabase Auth**: Built-in passwordless authentication
+- **PostgreSQL RLS**: Row-level security policies
+- **RPC Functions**: Server-side business logic
+- **Edge Functions**: Secure magic link delivery
+- **Real-time Sync**: Multi-device data synchronization
+- **Zero Dependencies**: Pure vanilla JavaScript
+- **Responsive Design**: Mobile-first UI with glassmorphism
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  User Browser                        │
+│  ┌──────────────┐         ┌──────────────┐         │
+│  │ Public Site  │         │  Admin Site  │         │
+│  │ (index.html) │         │ (admin.html) │         │
+│  └──────┬───────┘         └──────┬───────┘         │
+│         │                        │                  │
+│         │  Magic Link Request    │                  │
+│         └────────────┬───────────┘                  │
+└──────────────────────┼──────────────────────────────┘
+                       │
+           ┌───────────▼───────────┐
+           │  Edge Function        │
+           │  /request-magic-link  │
+           │  • Check allowlist    │
+           │  • Send magic link    │
+           └───────────┬───────────┘
+                       │
+           ┌───────────▼───────────┐
+           │  Supabase Backend     │
+           ├───────────────────────┤
+           │  • Auth (magic links) │
+           │  • PostgreSQL DB      │
+           │  • RLS Policies       │
+           │  • RPC Functions      │
+           └───────────────────────┘
+                       │
+           ┌───────────▼───────────┐
+           │  Tables               │
+           ├───────────────────────┤
+           │  • allowed_users      │
+           │  • admin_users        │
+           │  • profiles           │
+           │  • bookings           │
+           │  • settings           │
+           └───────────────────────┘
+```
+
+---
 
 ## Project Structure
 
 ```
 booking-mvp/
-├── index.html                          # Public booking interface
-├── admin.html                          # Admin dashboard
-├── supabase-setup.sql                  # Database schema and setup
+├── index.html                              # Public booking interface
+├── admin.html                              # Admin dashboard
+├── DEPLOYMENT.md                           # Complete setup guide
+├── TEST_PLAN.md                            # Comprehensive test plan
+├── supabase-auth-migration.sql             # Database migration (replaces old schema)
+├── supabase/
+│   ├── functions/
+│   │   └── request-magic-link/
+│   │       └── index.ts                    # Edge Function for magic link validation
+│   ├── config.toml                         # Supabase project config
+│   └── functions/.env.example              # Environment variables template
 ├── assets/
 │   ├── css/
-│   │   └── styles.css                  # Complete styling system
+│   │   └── styles.css                      # Glassmorphism dark theme
 │   └── js/
-│       ├── utils.js                    # Utility functions
-│       ├── supabase-config.js          # Supabase credentials and client
-│       ├── storage.js                  # Data layer (Supabase backend)
-│       ├── storage-old.js              # Backup: Original LocalStorage version
-│       ├── app.js                      # Public booking logic
-│       └── admin.js                    # Admin panel logic
+│       ├── utils.js                        # Utility functions (dates, toasts, etc.)
+│       ├── supabase-config.js              # Supabase client initialization
+│       ├── storage.js                      # Data layer with Auth + RPC
+│       ├── app.js                          # Public booking UI logic
+│       └── admin.js                        # Admin dashboard logic
 └── README.md
 ```
 
-## Getting Started
+---
 
-### Prerequisites
-
-This application requires a Supabase account for data storage.
-
-### 1. Set Up Supabase Backend
-
-1. **Create Supabase Account**: Sign up at [supabase.com](https://supabase.com)
-2. **Create New Project**: 
-   - Choose a project name
-   - Set a database password (save this!)
-   - Select your region
-3. **Run Database Setup**:
-   - Open SQL Editor in Supabase
-   - Copy and paste contents of `supabase-setup.sql`
-   - Click "Run" to create tables and policies
-4. **Get Your Credentials**:
-   - Go to Settings → API
-   - Copy your **Project URL**
-   - Copy your **anon/public key**
-5. **Update Configuration**:
-   - Open `assets/js/supabase-config.js`
-   - Replace `SUPABASE_URL` with your Project URL
-   - Replace `SUPABASE_ANON_KEY` with your anon key
-
-### 2. Access the Application
-
-**Live Site (GitHub Pages):**
-- **Public Site**: https://mrgreglet.github.io/booking-mvp/
-- **Admin Site**: https://mrgreglet.github.io/booking-mvp/admin.html
-
-**Local Development:**
-- Open `index.html` in a web browser (user interface)
-- Open `admin.html` in a web browser (admin dashboard)
-
-### 3. Default Admin Password
-
-```
-studio94
-```
-
-### 4. Demo Data (Development)
-
-To enable demo data seeding:
-1. Open `assets/js/admin.js`
-2. Change `const DEV_MODE = false;` to `const DEV_MODE = true;`
-3. The "Seed Demo Data" button will appear in the admin bookings panel
-
-## Usage
+## Quick Start
 
 ### For Users
 
-1. **Log In**: Enter your email and PIN (provided by admin)
-2. **Browse Calendar**: Use week navigation to find available slots
-   - ⚠️ **Past dates are disabled** - users can only book future slots
-3. **Book a Slot**: Click an available slot
-4. **Select Duration**: Choose 1-8 hours from dropdown
-5. **Submit**: Your booking request will be pending until admin approval
-6. **View Bookings**: Click "My Bookings" to see all your bookings
-7. **Cancel Booking**: Cancel pending or approved bookings with confirmation
+1. **Get Invited**: Admin must add your email to the system
+2. **Request Login Link**: Go to site, enter your email, click "Send Login Link"
+3. **Check Email**: Click the magic link (expires in 1 hour)
+4. **Book Session**: Click available slot, choose duration, submit request
+5. **Wait for Approval**: Admin will approve/decline your booking
 
-**Note**: Data syncs across all your devices automatically!
+### For Admins
 
-### For Administrators
+1. **Get Admin Access**: Your email must be in `admin_users` table
+2. **Login**: Request magic link at `/admin.html`
+3. **Invite Users**: Go to Invites tab, click "+ Invite User"
+4. **Approve Bookings**: Go to Bookings tab, review pending requests
+5. **Manage Profiles**: Edit user memberships and contracts
 
-1. **Log In**: Use the admin password (`studio94`)
+---
 
-2. **Manage Users**: 
-   - **Add New User**: Creates user and displays **4-digit PIN prominently**
-   - **Edit User**: Update name, membership, contract details
-   - **Delete User**: Confirmation required (deletes user and all bookings)
-   - **Reset PIN**: Generates new 4-digit PIN for user login
+## Deployment
 
-3. **Manage Bookings**:
-   - Toggle between **week** and **month** calendar views
-   - Click slots to **create manual bookings** (with conflict validation)
-   - **Approve/Decline** pending bookings (with conflict checks)
-   - **Cancel** approved bookings
-   - **Edit** booking duration (1-8 hours dropdown)
-   - **Delete** bookings (with confirmation slide-out)
-   - View **admin notes** and **user notes**
+**See [`DEPLOYMENT.md`](DEPLOYMENT.md) for complete setup instructions.**
 
-4. **Settings**:
-   - Configure business hours (open/close times)
-   - Set buffer time between bookings
-   - Adjust slot intervals
+### Quick Summary
 
-**Admin Features**:
-- ✅ Can view and edit past bookings
-- ✅ All actions validated for conflicts
-- ✅ Data syncs across all admin devices
-- ✅ Confirmation dialogs for destructive actions
+1. **Database Setup**: Run `supabase-auth-migration.sql` in Supabase SQL Editor
+2. **Create Admin**: Insert your user_id into `admin_users` table
+3. **Deploy Edge Function**: `supabase functions deploy request-magic-link`
+4. **Set Secrets**: Configure service role key and redirect URL
+5. **Push to GitHub**: Enable GitHub Pages for hosting
 
-## Business Rules
+---
 
-- **Slot Interval**: 30 minutes (bookings can start on :00 or :30)
-- **Buffer Time**: 30 minutes (prevents back-to-back bookings)
-- **Subscribed Users**: Limited to 1 approved booking per week
-- **Standard Users**: No weekly limit
-- **Conflict Detection**: Automatically prevents overlapping bookings
-- **Declined/Cancelled**: Do not block time slots
+## Testing
 
-## Design System
+**See [`TEST_PLAN.md`](TEST_PLAN.md) for comprehensive test scenarios.**
 
-### Color Palette
-- **Primary Accent**: Warm gold (`#ffb447`)
-- **Background**: Dark blue-gray (`#1a1d21`)
-- **Glass Surfaces**: Semi-transparent with backdrop blur
-- **Success**: Green (`#4caf50`)
-- **Pending**: Amber (`#e6b800`)
-- **Danger**: Red (`#c94a4a`)
+### Critical Tests
 
-### Typography
-- **Font**: Inter, Segoe UI, system-ui
-- **Weights**: 500 (regular), 600 (semi-bold), 700 (bold)
+✅ Non-invited email cannot request magic link  
+✅ Invited email receives magic link  
+✅ Non-admin cannot access admin dashboard  
+✅ Admin can invite/remove users  
+✅ Booking conflicts detected (30-min buffer)  
+✅ Weekly limits enforced for subscribed users  
+✅ RLS policies prevent unauthorized access  
+✅ Server validates all booking rules  
 
-## Mobile Support
+---
 
-The application is fully responsive with optimized breakpoints:
+## Database Schema
 
-- **Desktop** (>900px): Full layout with maximum calendar height
-- **Tablet** (700-900px): Compact layout with adjusted spacing
-- **Mobile** (500-700px): Touch-friendly with stacked elements
-- **Small Mobile** (<500px): Maximum space utilization
+### Core Tables
+
+**`allowed_users`** - Invite allowlist
+- `email` (PK) - User email
+- `invited_by` (FK) - Admin who invited
+- `created_at` - Invite timestamp
+
+**`admin_users`** - Admin privileges
+- `user_id` (PK, FK to auth.users) - Admin user
+- `created_at` - Admin since
+
+**`profiles`** - User data
+- `user_id` (PK, FK to auth.users)
+- `email` - User email
+- `name` - Display name
+- `membership` - 'standard' or 'subscribed'
+- `weekly_limit` - Max bookings per week
+- `contract_details` - Contract info
+
+**`bookings`** - Booking records
+- `id` (PK) - Booking UUID
+- `user_id` (FK to auth.users)
+- `user_email` - User email (denormalized)
+- `start_time` - Start timestamp
+- `end_time` - End timestamp
+- `duration_minutes` - Duration in minutes
+- `status` - 'pending' | 'approved' | 'declined' | 'cancelled'
+- `user_notes` - User notes
+- `admin_notes` - Admin notes
+
+**`settings`** - System configuration
+- `business_hours_start` - Opening time
+- `business_hours_end` - Closing time
+- `buffer_minutes` - Gap between bookings
+- `slot_interval_minutes` - Calendar slot size
+
+---
+
+## RPC Functions
+
+### `request_booking(p_start, p_end, p_user_notes)`
+**User-callable** - Creates booking request with server-side validation
+
+Rules enforced:
+- User must be authenticated
+- Email must be in `allowed_users`
+- Duration: 1-12 hours, multiple of 30 minutes
+- No conflicts with approved bookings (+ 30-min buffer)
+- Weekly limit for subscribed users (1 per week)
+
+Returns: `booking_id` (UUID)
+
+### `admin_set_booking_status(p_booking_id, p_status, p_admin_notes)`
+**Admin-only** - Approves, declines, or cancels bookings
+
+Checks:
+- User must be in `admin_users`
+- Valid status transition
+- No conflicts when approving
+
+### `admin_invite_email(p_email)`
+**Admin-only** - Adds email to allowlist
+
+### `admin_remove_invite(p_email)`
+**Admin-only** - Removes email from allowlist
+
+### `get_or_create_profile()`
+**Authenticated users** - Ensures profile exists after first login
+
+---
+
+## Security
+
+### Authentication
+- ✅ Magic links (Supabase Auth)
+- ✅ Invite-only access
+- ✅ Edge Function validates allowlist before sending links
+- ✅ Links expire in 1 hour
+- ✅ No passwords stored anywhere
+
+### Authorization
+- ✅ RLS policies on all tables
+- ✅ Users see only their own bookings
+- ✅ Admins see everything
+- ✅ Non-admins cannot call admin RPCs
+- ✅ Server validates all actions
+
+### Data Protection
+- ✅ Service role key stored as secret (never exposed)
+- ✅ Anon key safe for client-side use (RLS protects data)
+- ✅ HTTPS via GitHub Pages
+- ✅ PostgreSQL injection protection (parameterized queries)
+- ✅ Input validation on server
+
+---
+
+## Configuration
+
+### Environment Variables (Edge Function)
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+MAGIC_LINK_REDIRECT_URL=https://your-site.com/
+```
+
+⚠️ **NEVER commit service_role key to GitHub!**
+
+### Client Config
+
+File: `assets/js/supabase-config.js`
+
+```javascript
+const SUPABASE_URL = 'https://your-project.supabase.co';
+const SUPABASE_ANON_KEY = 'your-anon-key'; // Safe to expose
+```
+
+---
+
+## Tech Stack
+
+**Frontend**
+- Pure Vanilla JavaScript (ES6+)
+- HTML5 + CSS3
+- Glassmorphism UI design
+- No frameworks or build tools
+
+**Backend**
+- Supabase (managed PostgreSQL)
+- Supabase Auth (magic links)
+- Row Level Security (RLS)
+- PostgreSQL Functions (PL/pgSQL)
+- Edge Functions (Deno/TypeScript)
+
+**Hosting**
+- GitHub Pages (static hosting)
+- Supabase (database + auth)
+
+---
 
 ## Browser Support
 
-- Chrome/Edge (recommended)
-- Firefox
-- Safari
-- Modern mobile browsers
+- ✅ Chrome/Edge (latest)
+- ✅ Firefox (latest)
+- ✅ Safari (latest)
+- ✅ Mobile Safari (iOS 14+)
+- ✅ Mobile Chrome (Android 10+)
 
-## Backend & Database
+Requires:
+- ES6+ support
+- Fetch API
+- CSS Grid
+- CSS Custom Properties
 
-### Supabase Integration
+---
 
-This application uses **Supabase** as its backend:
+## Development
 
-- **Database**: PostgreSQL (cloud-hosted)
-- **Tables**: `users`, `bookings`, `settings`
-- **Real-time Sync**: Data syncs automatically across all devices
-- **Security**: Row Level Security (RLS) policies enabled
+### Local Testing
 
-### Database Schema
+1. Clone repository
+2. Update `supabase-config.js` with your project credentials
+3. Open `index.html` in browser (no build step needed!)
+4. For Edge Function testing: `supabase functions serve`
 
-See `supabase-setup.sql` for complete schema including:
-- User authentication with PIN hash
-- Booking records with status tracking
-- System settings configuration
-- Automatic timestamp management
-- Foreign key constraints and cascading deletes
+### Debugging
 
-### Configuration
+**Check auth state:**
+```javascript
+const user = window.storage.getCurrentUser();
+console.log('Current user:', user);
+console.log('Is admin:', window.storage.getIsAdmin());
+```
 
-**File**: `assets/js/supabase-config.js`
+**Check session:**
+```javascript
+const session = window.storage.getCurrentSession();
+console.log('Session:', session);
+```
 
-Contains:
-- Supabase Project URL
-- Anonymous/Public API Key
-- Client initialization
+**Test RPC directly:**
+```javascript
+const { data, error } = await window.supabaseClient.rpc('request_booking', {
+  p_start: '2026-02-10T10:00:00Z',
+  p_end: '2026-02-10T12:00:00Z',
+  p_user_notes: 'Test booking'
+});
+console.log('Result:', data, error);
+```
 
-**⚠️ Security Note**: The anon key is safe to expose publicly - it's restricted by Row Level Security policies.
+---
 
-## Security Notes
+## Troubleshooting
 
-Current security setup:
-- ✅ Supabase backend with PostgreSQL database
-- ✅ Row Level Security (RLS) enabled
-- ✅ PIN authentication with hash storage
-- ✅ Admin password protection
-- ✅ HTTPS via GitHub Pages
+### "Admin access required" after login
+**Solution**: Add your user_id to admin_users table
 
-For enhanced production security:
-- Consider implementing Supabase Auth for user sessions
-- Add rate limiting on API calls
-- Implement admin user authentication with Supabase
-- Use environment variables for configuration
-- Add audit logging for admin actions
+### Magic link not received
+**Solution**: 
+1. Check Edge Function logs
+2. Verify email in allowed_users
+3. Check spam folder
+4. Verify secrets are set correctly
+
+### "Email not invited" error
+**Solution**: Admin must add email via Invites tab
+
+### Booking conflict errors
+**Solution**: Check for overlapping approved bookings ± 30 minutes
+
+---
 
 ## License
 
-MIT License - feel free to use this project as you wish.
+MIT License - See LICENSE file for details
 
-## Author
+---
 
-Studio94 Booking System - Built with vanilla JavaScript
+## Support
+
+For issues or questions:
+1. Check `DEPLOYMENT.md` for setup help
+2. Review `TEST_PLAN.md` for expected behavior
+3. Check Supabase logs for backend errors
+4. Check browser console for frontend errors
+
+---
+
+## Roadmap
+
+- [ ] SMS notifications for booking status
+- [ ] Calendar export (iCal format)
+- [ ] Recurring bookings
+- [ ] Payment integration
+- [ ] Custom email templates
+- [ ] Multi-location support
+
+---
+
+**Built with ❤️ for Studio94**
+
+*Secure, scalable, and simple.*

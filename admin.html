@@ -8,12 +8,16 @@
 </head>
 <body class="admin-bg">
   <div id="admin-login" class="admin-login-panel">
-    <h2>Admin Login</h2>
+    <h2>Admin Access Required</h2>
+    <p style="text-align: center; color: var(--text-muted); margin-bottom: 1.5rem;">
+      Log in with your admin email to access the dashboard.
+    </p>
     <form id="admin-login-form">
-      <label for="admin-password">Password</label>
-      <input type="password" id="admin-password" autocomplete="current-password" required>
-      <button type="submit">Login</button>
+      <label for="admin-email">Email</label>
+      <input type="email" id="admin-email" placeholder="admin@studio94.com" autocomplete="email" required>
+      <button type="submit" id="admin-login-btn">Send Login Link</button>
     </form>
+    <div id="admin-login-status" class="login-status"></div>
     <div id="admin-login-error" class="error-msg"></div>
   </div>
   <div id="admin-app" class="admin-app" style="display:none;">
@@ -26,11 +30,13 @@
     </header>
     <main>
       <nav class="admin-nav">
-        <button data-panel="users" class="nav-btn active">Users</button>
+        <button data-panel="invites" class="nav-btn active">Invites</button>
+        <button data-panel="profiles" class="nav-btn">Profiles</button>
         <button data-panel="bookings" class="nav-btn">Bookings</button>
         <button data-panel="settings" class="nav-btn">Settings</button>
       </nav>
-      <section id="admin-panel-users" class="admin-panel"></section>
+      <section id="admin-panel-invites" class="admin-panel"></section>
+      <section id="admin-panel-profiles" class="admin-panel" style="display:none;"></section>
       <section id="admin-panel-bookings" class="admin-panel" style="display:none;"></section>
       <section id="admin-panel-settings" class="admin-panel" style="display:none;"></section>
     </main>
