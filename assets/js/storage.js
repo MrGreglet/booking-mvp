@@ -103,21 +103,14 @@ async function signOut() {
 
 // Magic link request via Edge Function
 async function requestMagicLink(email) {
-  const edgeFunctionUrl = `${db.supabaseUrl.replace('.supabase.co', '')}.supabase.co/functions/v1/request-magic-link`;
-  
+  // Use Supabase client's built-in functions.invoke method
   try {
-    const response = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email })
+    const { data, error } = await db.functions.invoke('request-magic-link', {
+      body: { email }
     });
     
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Failed to send magic link');
+    if (error) {
+      throw new Error(error.message || 'Failed to send magic link');
     }
     
     return data;
