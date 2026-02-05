@@ -306,7 +306,7 @@ body.admin-bg {
 }
 
 /* Day headers — public (same as admin) */
-.calendar-grid .calendar-header {
+.day-header {
   background: var(--bg-glass);
   backdrop-filter: blur(12px);
   font-weight: 600;
@@ -316,14 +316,47 @@ body.admin-bg {
   border-bottom: 2px solid var(--border-strong);
   border-right: 1px solid var(--border-glass);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.25rem;
   min-width: 0;
   color: var(--text-main);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   position: sticky;
   top: 0;
   z-index: 10;
+}
+
+.day-header.today {
+  background: rgba(251, 191, 36, 0.15);
+  border-bottom-color: var(--accent);
+}
+
+.day-name {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.day-date {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.time-label {
+  background: rgba(255, 255, 255, 0.03);
+  text-align: right;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0.6rem;
+  border-right: 1px solid var(--border-glass);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .calendar-grid .calendar-header:first-of-type {
