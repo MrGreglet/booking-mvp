@@ -457,19 +457,59 @@ body.admin-bg {
 }
 
 /* Pending: amber tint (PUBLIC + ADMIN) */
+.calendar-grid .slot-cell.pending,
 .calendar-grid .slot-cell.tentative,
+.admin-calendar-grid .slot-cell.pending,
 .admin-calendar-grid .slot-cell.tentative {
-  background: var(--slot-tentative);
+  background: rgba(251, 191, 36, 0.25);
   color: var(--text-main);
   cursor: pointer;
+  position: relative;
 }
 
+.calendar-grid .slot-cell.pending::after,
+.calendar-grid .slot-cell.tentative::after {
+  content: '⏱';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  opacity: 0.7;
+}
+
+.calendar-grid .slot-cell.pending:hover,
 .calendar-grid .slot-cell.tentative:hover,
+.admin-calendar-grid .slot-cell.pending:hover,
 .admin-calendar-grid .slot-cell.tentative:hover {
-  background: rgba(255, 255, 255, 0.06);
-  outline: 2px solid var(--primary);
+  background: rgba(251, 191, 36, 0.35);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
   z-index: 3;
+}
+
+/* Booked/Approved: green tint */
+.calendar-grid .slot-cell.booked,
+.admin-calendar-grid .slot-cell.booked {
+  background: rgba(34, 197, 94, 0.25);
+  color: var(--text-main);
+  cursor: not-allowed;
+  position: relative;
+}
+
+.calendar-grid .slot-cell.booked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  color: #22c55e;
+  opacity: 0.8;
+}
+
+.calendar-grid .slot-cell.booked:hover {
+  background: rgba(34, 197, 94, 0.3);
 }
 
 /* Admin calendar grid (shared layout) */
