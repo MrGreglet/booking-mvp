@@ -236,18 +236,25 @@ async function handleInviteUser(e) {
     // Generate temporary password
     const tempPassword = generateTempPassword();
     
-    // Create user in Supabase Auth with temp password
-    const { data: authData, error: authError } = await window.supabaseClient.auth.admin.createUser({
-      email: email,
-      password: tempPassword,
-      email_confirm: true,
-      user_metadata: {
-        first_login: true
-      }
-    });
+    // First check if user exists in auth.users
+    const { data: existingUsers } = await window.supabaseClient.auth.admin.listUsers();
+    const userExists = existingUsers?.users?.some(u => u.email === email);
     
-    if (authError) {
-      throw new Error(authError.message);
+    if (!userExists) {
+      // Create user via signUp (this creates the auth user)
+      const { data: signUpData, error: signUpError } = await window.supabaseClient.auth.signUp({
+        email: email,
+        password: tempPassword,
+        options: {
+          data: {
+            first_login: true
+          }
+        }
+      });
+      
+      if (signUpError && !signUpError.message.includes('already registered')) {
+        throw new Error(signUpError.message);
+      }
     }
     
     // Add to allowed_users
@@ -258,10 +265,55 @@ async function handleInviteUser(e) {
     renderInvitesPanel();
     
   } catch (error) {
-    showToast(error.message || 'Failed to create user', 'error');
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Create User';
+    // If error is about admin API, fall back to simple invite
+    if (error.message.includes('admin') || error.message.includes('service_role')) {
+      const tempPassword = generateTempPassword();
+      try {
+        await storage.inviteUser(email);
+        showManualSetupDialog(email, tempPassword);
+        renderInvitesPanel();
+      } catch (err2) {
+        showToast(err2.message || 'Failed to invite user', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create User';
+      }
+    } else {
+      showToast(error.message || 'Failed to create user', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create User';
+    }
   }
+}
+
+function showManualSetupDialog(email, password) {
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--accent);">⚠️ Manual Setup Required</h2>`;
+  html += `<p style="margin: 1rem 0;">User added to allowlist. You need to create their account manually:</p>`;
+  html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0;">`;
+  html += `<h3 style="margin-bottom: 1rem;">Steps:</h3>`;
+  html += `<ol style="margin-left: 1.5rem; line-height: 1.8;">`;
+  html += `<li>Go to Supabase Dashboard → Authentication → Users</li>`;
+  html += `<li>Click "Add User"</li>`;
+  html += `<li>Use email: <code style="background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px;">${email}</code></li>`;
+  html += `<li>Set password: <code style="background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px;">${password}</code></li>`;
+  html += `<li>Enable "Auto Confirm User"</li>`;
+  html += `</ol>`;
+  html += `</div>`;
+  html += `<div class="form-actions">`;
+  html += `<button class="primary" id="copy-setup-btn">Copy Password</button>`;
+  html += `<a href="https://supabase.com/dashboard/project/qkjcqtsacuspfdslgfxj/auth/users" target="_blank" class="primary" style="display: inline-block; padding: 0.75rem 1.5rem; text-decoration: none;">Open Supabase Dashboard</a>`;
+  html += `<button class="secondary close-dialog-btn">Close</button>`;
+  html += `</div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
+  
+  document.getElementById('copy-setup-btn').onclick = () => {
+    navigator.clipboard.writeText(password).then(() => {
+      showToast('Password copied!', 'success');
+    });
+  };
 }
 
 function generateTempPassword() {
