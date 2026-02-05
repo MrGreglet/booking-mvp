@@ -28,14 +28,20 @@ function renderUserBar() {
     bar.innerHTML = `
       <form id="login-form" class="login-form">
         <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
-        <button type="submit" id="login-submit-btn">Send Login Link</button>
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" id="login-submit-btn">Login</button>
       </form>
       <span id="login-status" class="login-status"></span>
     `;
     
     const form = document.getElementById('login-form');
-    form.onsubmit = handleMagicLinkRequest;
+    form.onsubmit = handlePasswordLogin;
   } else {
+    // Check if needs password change
+    if (storage.needsPasswordChange()) {
+      openPasswordChangePanel();
+    }
+    
     const profile = storage.getProfiles().find(p => p.user_id === currentUser.id);
     const displayName = profile?.name || currentUser.email.split('@')[0];
     const membership = profile?.membership || 'standard';
@@ -66,43 +72,42 @@ function renderUserBar() {
   }
 }
 
-async function handleMagicLinkRequest(e) {
+async function handlePasswordLogin(e) {
   e.preventDefault();
   
   const emailInput = document.getElementById('login-email');
+  const passwordInput = document.getElementById('login-password');
   const submitBtn = document.getElementById('login-submit-btn');
   const statusEl = document.getElementById('login-status');
   const email = emailInput.value.trim();
+  const password = passwordInput.value;
   
   // Disable form
   emailInput.disabled = true;
+  passwordInput.disabled = true;
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Sending...';
+  submitBtn.textContent = 'Logging in...';
   statusEl.textContent = '';
   
   try {
-    await storage.requestMagicLink(email);
+    await storage.signInWithPassword(email, password);
     
-    // Success
-    statusEl.innerHTML = `
-      <div style="color: var(--success); margin-top: 1rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: var(--radius-md);">
-        ✓ Check your email!<br>
-        <small>Click the login link to continue.</small>
-      </div>
-    `;
-    emailInput.value = '';
+    // Success - will trigger auth state change
+    showToast('Logged in successfully!');
+    await init();
   } catch (error) {
-    // Error (either not invited or server error)
+    // Error
     statusEl.innerHTML = `
       <div style="color: var(--danger); margin-top: 1rem; padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: var(--radius-md);">
-        ${error.message || 'Failed to send login link'}
+        ${error.message || 'Login failed'}
       </div>
     `;
-  } finally {
+    
     // Re-enable form
     emailInput.disabled = false;
+    passwordInput.disabled = false;
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Send Login Link';
+    submitBtn.textContent = 'Login';
   }
 }
 
@@ -132,6 +137,74 @@ async function checkMagicLinkRedirect() {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await init();
   }
+}
+
+// ============================================================
+// PASSWORD CHANGE PANEL
+// ============================================================
+
+function openPasswordChangePanel() {
+  const panel = document.getElementById('slidein-panel');
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Change Password Required</h2>`;
+  html += `<p style="color: var(--text-muted); margin-bottom: 1.5rem;">You must change your password on first login.</p>`;
+  
+  html += `<form id="password-change-form" style="display: flex; flex-direction: column; gap: 1rem;">`;
+  html += `<div>`;
+  html += `<label for="new-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">New Password:</label>`;
+  html += `<input type="password" id="new-password" required minlength="8" autocomplete="new-password" style="width: 100%; padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-glass); background: var(--bg-glass); color: var(--text-main);">`;
+  html += `<small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">Minimum 8 characters</small>`;
+  html += `</div>`;
+  html += `<div>`;
+  html += `<label for="confirm-password" style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Confirm Password:</label>`;
+  html += `<input type="password" id="confirm-password" required minlength="8" autocomplete="new-password" style="width: 100%; padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-glass); background: var(--bg-glass); color: var(--text-main);">`;
+  html += `</div>`;
+  html += `<button type="submit" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: #232526; border: none; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;">Change Password</button>`;
+  html += `</form>`;
+  
+  panel.innerHTML = html;
+  openSlidein();
+  
+  // Prevent closing
+  const closeBtn = panel.querySelector('.close-btn');
+  closeBtn.style.display = 'none';
+  
+  // Handle form submit
+  const form = document.getElementById('password-change-form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    
+    const newPassword = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    
+    if (newPassword !== confirmPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+    
+    if (newPassword.length < 8) {
+      showToast('Password must be at least 8 characters', 'error');
+      return;
+    }
+    
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Changing...';
+    
+    try {
+      await storage.changePassword(newPassword);
+      await storage.markPasswordChanged();
+      
+      showToast('Password changed successfully!');
+      closeSlidein();
+      await init();
+    } catch (error) {
+      showToast(error.message || 'Failed to change password', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Change Password';
+    }
+  };
 }
 
 // ============================================================

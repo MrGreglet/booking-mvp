@@ -101,7 +101,7 @@ async function signOut() {
   cachedAllowedUsers = null;
 }
 
-// Magic link request via Edge Function
+// Magic link request via Edge Function (DEPRECATED - keeping for backwards compatibility)
 async function requestMagicLink(email) {
   // Use Supabase client's built-in functions.invoke method
   try {
@@ -118,6 +118,57 @@ async function requestMagicLink(email) {
     console.error('Error requesting magic link:', error);
     throw error;
   }
+}
+
+// Password authentication
+async function signInWithPassword(email, password) {
+  const { data, error } = await db.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password: password
+  });
+  
+  if (error) {
+    throw new Error(error.message || 'Login failed');
+  }
+  
+  currentSession = data.session;
+  currentUser = data.user;
+  await checkAdminStatus();
+  
+  return data;
+}
+
+// Change password
+async function changePassword(newPassword) {
+  const { data, error } = await db.auth.updateUser({
+    password: newPassword
+  });
+  
+  if (error) {
+    throw new Error(error.message || 'Failed to change password');
+  }
+  
+  return data;
+}
+
+// Check if user needs to change password (first login)
+function needsPasswordChange() {
+  if (!currentUser) return false;
+  // Check if user metadata has first_login flag
+  return currentUser.user_metadata?.first_login === true;
+}
+
+// Mark password as changed
+async function markPasswordChanged() {
+  const { data, error } = await db.auth.updateUser({
+    data: { first_login: false }
+  });
+  
+  if (error) {
+    console.error('Error updating user metadata:', error);
+  }
+  
+  return data;
 }
 
 // Listen for auth state changes
@@ -541,7 +592,11 @@ window.storage = {
   getCurrentSession,
   getIsAdmin,
   signOut,
-  requestMagicLink,
+  requestMagicLink, // deprecated
+  signInWithPassword,
+  changePassword,
+  needsPasswordChange,
+  markPasswordChanged,
   
   // Settings
   getSettings,

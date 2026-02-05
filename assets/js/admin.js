@@ -46,34 +46,43 @@ async function handleAdminLogin(e) {
   e.preventDefault();
   
   const emailInput = document.getElementById('admin-email');
+  const passwordInput = document.getElementById('admin-password');
   const submitBtn = document.getElementById('admin-login-btn');
   const statusEl = document.getElementById('admin-login-status');
   const errorEl = document.getElementById('admin-login-error');
   const email = emailInput.value.trim();
+  const password = passwordInput.value;
   
   // Disable form
   emailInput.disabled = true;
+  passwordInput.disabled = true;
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Sending...';
+  submitBtn.textContent = 'Logging in...';
   statusEl.textContent = '';
   errorEl.textContent = '';
   
   try {
-    await storage.requestMagicLink(email);
+    await storage.signInWithPassword(email, password);
     
-    statusEl.innerHTML = `
-      <div style="color: var(--success); margin-top: 1rem; padding: 1rem; background: rgba(34, 197, 94, 0.1); border-radius: var(--radius-md);">
-        ✓ Check your email!<br>
-        <small>Click the login link to continue.</small>
-      </div>
-    `;
-    emailInput.value = '';
+    // Wait for auth state to update
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Check if admin
+    const hasAccess = await checkAdminAccess();
+    
+    if (!hasAccess) {
+      throw new Error('Admin access required');
+    }
+    
+    // Success - initialize dashboard
+    await init();
+    
   } catch (error) {
-    errorEl.textContent = error.message || 'Failed to send login link';
-  } finally {
+    errorEl.textContent = error.message || 'Login failed';
     emailInput.disabled = false;
+    passwordInput.disabled = false;
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Send Login Link';
+    submitBtn.textContent = 'Login';
   }
 }
 
@@ -199,10 +208,10 @@ function openInviteForm() {
       <input type="email" id="invite-email" placeholder="user@example.com" required autocomplete="email">
     </div>
     <p style="color: var(--text-muted); font-size: 0.9rem; margin: 1rem 0;">
-      The user will be able to request a magic link to log in and book sessions.
+      A temporary password will be generated for the user. They must change it on first login.
     </p>
     <div class="form-actions">
-      <button type="submit" class="primary">Send Invite</button>
+      <button type="submit" class="primary">Create User</button>
       <button type="button" class="secondary cancel-btn">Cancel</button>
     </div>
   </form>`;
@@ -218,21 +227,77 @@ async function handleInviteUser(e) {
   
   const emailInput = document.getElementById('invite-email');
   const submitBtn = e.target.querySelector('button[type="submit"]');
-  const email = emailInput.value.trim();
+  const email = emailInput.value.trim().toLowerCase();
   
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Inviting...';
+  submitBtn.textContent = 'Creating...';
   
   try {
+    // Generate temporary password
+    const tempPassword = generateTempPassword();
+    
+    // Create user in Supabase Auth with temp password
+    const { data: authData, error: authError } = await window.supabaseClient.auth.admin.createUser({
+      email: email,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: {
+        first_login: true
+      }
+    });
+    
+    if (authError) {
+      throw new Error(authError.message);
+    }
+    
+    // Add to allowed_users
     await storage.inviteUser(email);
-    showToast(`Invited ${email}`, 'success');
-    closeSlidein();
+    
+    // Show success with credentials
+    showCredentialsDialog(email, tempPassword);
     renderInvitesPanel();
+    
   } catch (error) {
-    showToast(error.message || 'Failed to invite user', 'error');
+    showToast(error.message || 'Failed to create user', 'error');
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Send Invite';
+    submitBtn.textContent = 'Create User';
   }
+}
+
+function generateTempPassword() {
+  // Generate a random 12-character password
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+function showCredentialsDialog(email, password) {
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--success);">✓ User Created</h2>`;
+  html += `<p style="margin: 1rem 0;">Send these login credentials to the user:</p>`;
+  html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0; font-family: monospace;">`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Email:</strong><br>${email}</div>`;
+  html += `<div><strong>Temporary Password:</strong><br>${password}</div>`;
+  html += `</div>`;
+  html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">⚠️ Save this password - it won't be shown again! The user must change it on first login.</p>`;
+  html += `<div class="form-actions">`;
+  html += `<button class="primary" id="copy-credentials-btn">Copy to Clipboard</button>`;
+  html += `<button class="secondary close-dialog-btn">Close</button>`;
+  html += `</div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
+  
+  document.getElementById('copy-credentials-btn').onclick = () => {
+    const text = `Studio94 Booking Login\n\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease change your password after first login.`;
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Credentials copied to clipboard!', 'success');
+    });
+  };
 }
 
 function confirmRemoveInvite(email) {

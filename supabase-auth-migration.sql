@@ -8,10 +8,24 @@
 -- 1. DROP OLD TABLES (backup data first if needed!)
 -- ============================================================
 
--- Drop old triggers
-DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-DROP TRIGGER IF EXISTS update_bookings_updated_at ON bookings;
-DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+-- Drop old triggers (wrapped in DO block to handle non-existent tables)
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_bookings_updated_at ON bookings;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 
 -- Drop old tables (will cascade to bookings via FK)
 DROP TABLE IF EXISTS users CASCADE;
@@ -69,19 +83,23 @@ CREATE TABLE bookings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Indexes for performance
-CREATE INDEX idx_bookings_user_id ON bookings(user_id);
-CREATE INDEX idx_bookings_user_email ON bookings(user_email);
-CREATE INDEX idx_bookings_start_time ON bookings(start_time);
-CREATE INDEX idx_bookings_status ON bookings(status);
-CREATE INDEX idx_bookings_user_status ON bookings(user_id, status);
+-- Indexes for performance (IF NOT EXISTS for idempotency)
+CREATE INDEX IF NOT EXISTS idx_bookings_user_id ON bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_user_email ON bookings(user_email);
+CREATE INDEX IF NOT EXISTS idx_bookings_start_time ON bookings(start_time);
+CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+CREATE INDEX IF NOT EXISTS idx_bookings_user_status ON bookings(user_id, status);
 
 -- ============================================================
 -- 4. ENSURE SETTINGS TABLE EXISTS (IDEMPOTENT)
 -- ============================================================
 
--- Drop trigger first (if exists)
-DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+-- Drop trigger first (if exists) - wrapped to handle non-existent table
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 
 -- Drop and recreate settings table to ensure correct schema
 DROP TABLE IF EXISTS settings CASCADE;
@@ -96,9 +114,10 @@ CREATE TABLE settings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Insert default settings
+-- Insert default settings (ON CONFLICT for idempotency)
 INSERT INTO settings (id, business_hours_start, business_hours_end, buffer_minutes, slot_interval_minutes)
-VALUES ('default', '09:00', '17:00', 30, 60);
+VALUES ('default', '09:00', '17:00', 30, 60)
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
 -- 5. UPDATED_AT TRIGGERS
@@ -112,6 +131,25 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing triggers if they exist
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_bookings_updated_at ON bookings;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
+DO $$ 
+BEGIN
+  DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 
 -- Apply to tables
 CREATE TRIGGER update_profiles_updated_at
@@ -167,7 +205,35 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
 -- ============================================================
--- 7. RLS POLICIES - ENABLE RLS ON ALL TABLES
+-- 7. RLS POLICIES - DROP EXISTING POLICIES (IDEMPOTENT)
+-- ============================================================
+
+-- Drop all existing policies to ensure clean slate
+DROP POLICY IF EXISTS "Admins can view all allowed users" ON allowed_users;
+DROP POLICY IF EXISTS "Admins can invite users" ON allowed_users;
+DROP POLICY IF EXISTS "Admins can remove invited users" ON allowed_users;
+
+DROP POLICY IF EXISTS "Admins can view admin list" ON admin_users;
+DROP POLICY IF EXISTS "Admins can add new admins" ON admin_users;
+
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Admins can update all profiles" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+
+DROP POLICY IF EXISTS "Users can view own bookings" ON bookings;
+DROP POLICY IF EXISTS "Admins can view all bookings" ON bookings;
+DROP POLICY IF EXISTS "Users can create booking requests" ON bookings;
+DROP POLICY IF EXISTS "Users can cancel own pending bookings" ON bookings;
+DROP POLICY IF EXISTS "Admins can update all bookings" ON bookings;
+DROP POLICY IF EXISTS "Admins can delete bookings" ON bookings;
+
+DROP POLICY IF EXISTS "Anyone can view settings" ON settings;
+DROP POLICY IF EXISTS "Admins can update settings" ON settings;
+
+-- ============================================================
+-- 8. RLS POLICIES - ENABLE RLS ON ALL TABLES
 -- ============================================================
 
 ALTER TABLE allowed_users ENABLE ROW LEVEL SECURITY;
@@ -177,7 +243,7 @@ ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
--- 8. RLS POLICIES - allowed_users (admin-only)
+-- 9. RLS POLICIES - allowed_users (admin-only)
 -- ============================================================
 
 -- Admins can view all
@@ -196,7 +262,7 @@ CREATE POLICY "Admins can remove invited users"
   USING (is_admin(auth.uid()));
 
 -- ============================================================
--- 9. RLS POLICIES - admin_users (admin-only)
+-- 10. RLS POLICIES - admin_users (admin-only)
 -- ============================================================
 
 -- Admins can view all admins
@@ -210,7 +276,7 @@ CREATE POLICY "Admins can add new admins"
   WITH CHECK (is_admin(auth.uid()));
 
 -- ============================================================
--- 10. RLS POLICIES - profiles
+-- 11. RLS POLICIES - profiles
 -- ============================================================
 
 -- Users can view their own profile
@@ -240,7 +306,7 @@ CREATE POLICY "Users can insert own profile"
   WITH CHECK (auth.uid() = user_id AND is_invited(email));
 
 -- ============================================================
--- 11. RLS POLICIES - bookings
+-- 12. RLS POLICIES - bookings
 -- ============================================================
 
 -- Users can view their own bookings
@@ -280,7 +346,7 @@ CREATE POLICY "Admins can delete bookings"
   USING (is_admin(auth.uid()));
 
 -- ============================================================
--- 12. RLS POLICIES - settings
+-- 13. RLS POLICIES - settings
 -- ============================================================
 
 -- Everyone can read settings
@@ -294,7 +360,7 @@ CREATE POLICY "Admins can update settings"
   USING (is_admin(auth.uid()));
 
 -- ============================================================
--- 13. RPC FUNCTION - request_booking
+-- 14. RPC FUNCTION - request_booking
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION request_booking(
@@ -413,7 +479,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
--- 14. RPC FUNCTION - admin_set_booking_status
+-- 15. RPC FUNCTION - admin_set_booking_status
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION admin_set_booking_status(
@@ -476,7 +542,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
--- 15. RPC FUNCTION - admin_invite_email
+-- 16. RPC FUNCTION - admin_invite_email
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION admin_invite_email(p_email TEXT)
@@ -503,7 +569,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
--- 16. RPC FUNCTION - admin_remove_invite
+-- 17. RPC FUNCTION - admin_remove_invite
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION admin_remove_invite(p_email TEXT)
@@ -523,7 +589,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
--- 17. RPC FUNCTION - get_or_create_profile
+-- 18. RPC FUNCTION - get_or_create_profile
 -- ============================================================
 
 -- Called automatically after user logs in to ensure profile exists
@@ -561,7 +627,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
--- 18. SEED INITIAL ADMIN (OPTIONAL - REPLACE EMAIL)
+-- 19. SEED INITIAL ADMIN (OPTIONAL - REPLACE EMAIL)
 -- ============================================================
 
 -- IMPORTANT: Replace 'your-admin-email@example.com' with your actual email
