@@ -281,9 +281,6 @@ body.admin-bg {
 
 /* --- Public calendar grid (glass card, match admin look) --- */
 .calendar-grid {
-  display: grid;
-  grid-template-columns: 80px repeat(7, 1fr);
-  grid-auto-rows: 44px;
   border-radius: 0;
   overflow: visible;
   background: transparent;
@@ -291,6 +288,21 @@ body.admin-bg {
   box-shadow: none;
   pointer-events: auto;
   z-index: 0;
+}
+
+.calendar-wrapper {
+  display: grid;
+  grid-template-columns: 80px repeat(7, 1fr);
+  grid-auto-rows: 44px;
+  background: transparent;
+}
+
+.calendar-header {
+  display: contents;
+}
+
+.time-row {
+  display: contents;
 }
 
 /* Day headers — public (same as admin) */
