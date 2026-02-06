@@ -491,6 +491,9 @@ async function handleUpdateProfile(e, userId) {
 // BOOKINGS PANEL
 // ============================================================
 
+// Current week for admin calendar
+let adminCurrentWeekStart = getWeekStart(new Date());
+
 function renderBookingsPanel() {
   const panel = document.getElementById('admin-panel-bookings');
   const bookings = storage.getBookings().sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
@@ -501,8 +504,26 @@ function renderBookingsPanel() {
   
   let html = `
     <div class="panel-header">
-      <h2>All Bookings</h2>
+      <h2>Bookings Calendar</h2>
       <span class="info-text">${pendingCount} pending approval</span>
+    </div>
+    
+    <!-- Calendar Navigation -->
+    <div class="calendar-controls">
+      <button id="admin-prev-week" aria-label="Previous week">&lt;</button>
+      <span id="admin-week-label"></span>
+      <button id="admin-next-week" aria-label="Next week">&gt;</button>
+      <button id="admin-today-btn">Today</button>
+    </div>
+    
+    <!-- Calendar Grid -->
+    <div id="admin-calendar-grid" class="calendar-grid" style="margin-bottom: 2rem;">
+      <!-- Calendar rendered by renderAdminCalendar() -->
+    </div>
+    
+    <!-- Bookings Table Below -->
+    <div class="panel-header" style="margin-top: 2rem;">
+      <h3>All Bookings List</h3>
     </div>
   `;
   
@@ -562,6 +583,23 @@ function renderBookingsPanel() {
   
   panel.innerHTML = html;
   
+  // Render calendar
+  renderAdminCalendar();
+  
+  // Setup calendar navigation
+  document.getElementById('admin-prev-week').onclick = () => {
+    adminCurrentWeekStart = new Date(adminCurrentWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+    renderAdminCalendar();
+  };
+  document.getElementById('admin-next-week').onclick = () => {
+    adminCurrentWeekStart = new Date(adminCurrentWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+    renderAdminCalendar();
+  };
+  document.getElementById('admin-today-btn').onclick = () => {
+    adminCurrentWeekStart = getWeekStart(new Date());
+    renderAdminCalendar();
+  };
+  
   // Bind events using event delegation
   panel.addEventListener('click', async (e) => {
     const target = e.target;
@@ -579,6 +617,182 @@ function renderBookingsPanel() {
       confirmDeleteBooking(bookingId);
     }
   });
+}
+
+function renderAdminCalendar() {
+  const grid = document.getElementById('admin-calendar-grid');
+  if (!grid) return;
+  
+  const settings = storage.getSettings();
+  const bookings = storage.getBookings();
+  
+  // Update week label
+  const weekEnd = new Date(adminCurrentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+  const labelElem = document.getElementById('admin-week-label');
+  if (labelElem) {
+    labelElem.textContent = `${formatDateShort(adminCurrentWeekStart)} - ${formatDateShort(weekEnd)}`;
+  }
+  
+  // Build HTML (same structure as user calendar)
+  let html = '<div class="calendar-wrapper">';
+  
+  // Header row with day labels
+  html += '<div class="calendar-header">';
+  html += '<div class="day-header time-corner"></div>';
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(adminCurrentWeekStart.getTime() + i * 24 * 60 * 60 * 1000);
+    const isToday = isSameDay(day, new Date());
+    html += `
+      <div class="day-header ${isToday ? 'today' : ''}">
+        <div class="day-name">${getDayName(day)}</div>
+        <div class="day-date">${day.getDate()}</div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  
+  // Time rows
+  const startHour = parseInt(settings.business_hours_start.split(':')[0]);
+  const endHour = parseInt(settings.business_hours_end.split(':')[0]);
+  const slotMinutes = settings.slot_interval_minutes;
+  
+  for (let hour = startHour; hour < endHour; hour++) {
+    for (let minute = 0; minute < 60; minute += slotMinutes) {
+      const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      
+      html += '<div class="time-row">';
+      html += `<div class="time-label">${timeStr}</div>`;
+      
+      for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+        const slotDate = new Date(adminCurrentWeekStart);
+        slotDate.setDate(slotDate.getDate() + dayOffset);
+        slotDate.setHours(hour, minute, 0, 0);
+        
+        const slotISO = slotDate.toISOString();
+        const isPast = slotDate < new Date();
+        
+        // Check if there's a booking at this slot
+        const booking = bookings.find(b => b.startISO === slotISO);
+        
+        let slotClass = 'slot-cell';
+        if (isPast) slotClass += ' past';
+        if (booking) {
+          if (booking.status === 'pending') slotClass += ' pending';
+          else if (booking.status === 'approved') slotClass += ' booked';
+          else if (booking.status === 'declined') slotClass += ' declined';
+        }
+        
+        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-id="${booking ? booking.id : ''}"></div>`;
+      }
+      
+      html += '</div>';
+    }
+  }
+  
+  html += '</div>';
+  grid.innerHTML = html;
+  
+  // Add click handler for slots with bookings
+  grid.querySelectorAll('.slot-cell').forEach(cell => {
+    const bookingId = cell.getAttribute('data-booking-id');
+    if (bookingId) {
+      cell.style.cursor = 'pointer';
+      cell.onclick = () => openAdminBookingDetails(bookingId);
+    }
+  });
+}
+
+function openAdminBookingDetails(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  const start = new Date(booking.startISO);
+  const end = new Date(booking.endISO);
+  const statusClass = booking.status === 'approved' ? 'success' :
+                     booking.status === 'declined' ? 'danger' :
+                     booking.status === 'cancelled' ? 'secondary' : 'warning';
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Booking Details</h2>`;
+  
+  html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0;">`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Date:</strong> ${formatDateYMD(start)}</div>`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Time:</strong> ${formatTimeHM(start)} - ${formatTimeHM(end)}</div>`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Duration:</strong> ${booking.durationMinutes} minutes</div>`;
+  html += `<div style="margin-bottom: 1rem;"><strong>User:</strong> ${booking.userEmail}</div>`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Status:</strong> <span class="badge badge-${statusClass}">${booking.status}</span></div>`;
+  
+  if (booking.userNotes) {
+    html += `<div style="margin-bottom: 1rem;"><strong>User Notes:</strong><br><div style="background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 4px; margin-top: 0.5rem;">${booking.userNotes}</div></div>`;
+  }
+  
+  if (booking.adminNotes) {
+    html += `<div style="margin-bottom: 1rem;"><strong>Admin Notes:</strong><br><div style="background: rgba(0,0,0,0.2); padding: 0.75rem; border-radius: 4px; margin-top: 0.5rem; color: var(--primary);">${booking.adminNotes}</div></div>`;
+  }
+  html += `</div>`;
+  
+  // Action buttons based on status
+  if (booking.status === 'pending') {
+    html += `<div class="form-actions">`;
+    html += `<button class="primary" id="approve-detail-btn">Approve</button>`;
+    html += `<button class="danger" id="decline-detail-btn">Decline</button>`;
+    html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
+    html += `<button class="secondary close-dialog-btn">Close</button>`;
+    html += `</div>`;
+  } else if (booking.status === 'approved') {
+    html += `<div class="form-actions">`;
+    html += `<button class="danger" id="cancel-detail-btn">Cancel Booking</button>`;
+    html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
+    html += `<button class="secondary close-dialog-btn">Close</button>`;
+    html += `</div>`;
+  } else {
+    html += `<div class="form-actions">`;
+    html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
+    html += `<button class="secondary close-dialog-btn">Close</button>`;
+    html += `</div>`;
+  }
+  
+  openSlidein(html);
+  
+  // Bind events
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  const closeBtn = document.querySelector('.close-dialog-btn');
+  if (closeBtn) closeBtn.onclick = closeSlidein;
+  
+  const approveBtn = document.getElementById('approve-detail-btn');
+  if (approveBtn) {
+    approveBtn.onclick = async () => {
+      closeSlidein();
+      await handleApproveBooking(bookingId);
+    };
+  }
+  
+  const declineBtn = document.getElementById('decline-detail-btn');
+  if (declineBtn) {
+    declineBtn.onclick = async () => {
+      closeSlidein();
+      await handleDeclineBooking(bookingId);
+    };
+  }
+  
+  const cancelBtn = document.getElementById('cancel-detail-btn');
+  if (cancelBtn) {
+    cancelBtn.onclick = async () => {
+      closeSlidein();
+      await handleCancelBooking(bookingId);
+    };
+  }
+  
+  const deleteBtn = document.getElementById('delete-detail-btn');
+  if (deleteBtn) {
+    deleteBtn.onclick = () => {
+      closeSlidein();
+      confirmDeleteBooking(bookingId);
+    };
+  }
 }
 
 async function handleApproveBooking(bookingId) {
