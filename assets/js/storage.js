@@ -28,32 +28,46 @@ let isAdmin = false;
 // ========== AUTH MANAGEMENT ==========
 
 async function initAuth() {
-  // Get current session
-  const { data: { session }, error } = await db.auth.getSession();
-  
-  if (error) {
-    console.error('Error getting session:', error);
-    return null;
-  }
-  
-  if (session) {
-    currentSession = session;
-    currentUser = session.user;
+  try {
+    // Get current session
+    const { data: { session }, error } = await db.auth.getSession();
     
-    // Check if user is admin
-    await checkAdminStatus();
-    
-    // Ensure profile exists
-    try {
-      await db.rpc('get_or_create_profile');
-    } catch (err) {
-      console.error('Error creating profile:', err);
+    if (error) {
+      // Invalid session - clear it
+      console.warn('Invalid session detected, clearing...');
+      await db.auth.signOut();
+      return null;
     }
     
-    return currentUser;
+    if (session) {
+      currentSession = session;
+      currentUser = session.user;
+      
+      // Check if user is admin
+      await checkAdminStatus();
+      
+      // Ensure profile exists
+      try {
+        await db.rpc('get_or_create_profile');
+      } catch (err) {
+        // Silently fail if profile creation errors (user might not have access)
+        console.log('Profile check skipped');
+      }
+      
+      return currentUser;
+    }
+    
+    return null;
+  } catch (error) {
+    // Catch any unexpected errors and clear session
+    console.warn('Auth initialization error, clearing session');
+    try {
+      await db.auth.signOut();
+    } catch (e) {
+      // Ignore signOut errors
+    }
+    return null;
   }
-  
-  return null;
 }
 
 async function checkAdminStatus() {
@@ -175,24 +189,34 @@ async function markPasswordChanged() {
 db.auth.onAuthStateChange(async (event, session) => {
   console.log('Auth state changed:', event);
   
-  if (event === 'SIGNED_IN' && session) {
-    currentSession = session;
-    currentUser = session.user;
-    await checkAdminStatus();
-    
-    // Ensure profile exists
-    try {
-      await db.rpc('get_or_create_profile');
-    } catch (err) {
-      console.error('Error creating profile:', err);
+  try {
+    if (event === 'SIGNED_IN' && session) {
+      currentSession = session;
+      currentUser = session.user;
+      
+      try {
+        await checkAdminStatus();
+      } catch (err) {
+        console.warn('Could not check admin status:', err.message);
+        isAdmin = false;
+      }
+      
+      // Ensure profile exists
+      try {
+        await db.rpc('get_or_create_profile');
+      } catch (err) {
+        console.log('Profile check skipped');
+      }
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentSession = null;
+      isAdmin = false;
+      cachedBookings = null;
+      cachedProfiles = null;
+      cachedAllowedUsers = null;
     }
-  } else if (event === 'SIGNED_OUT') {
-    currentUser = null;
-    currentSession = null;
-    isAdmin = false;
-    cachedBookings = null;
-    cachedProfiles = null;
-    cachedAllowedUsers = null;
+  } catch (error) {
+    console.warn('Auth state change handler error:', error.message);
   }
 });
 
@@ -529,16 +553,37 @@ async function loadAll() {
     // Initialize auth first
     await initAuth();
     
-    // Load settings (always)
-    await loadSettings();
+    // Load settings (always - public data)
+    try {
+      await loadSettings();
+    } catch (err) {
+      console.warn('Could not load settings, using defaults');
+      cachedSettings = DEFAULT_SETTINGS;
+    }
     
     // Load data based on auth status
     if (currentUser) {
-      await loadBookings();
-      await loadProfiles();
+      try {
+        await loadBookings();
+      } catch (err) {
+        console.warn('Could not load bookings');
+        cachedBookings = [];
+      }
+      
+      try {
+        await loadProfiles();
+      } catch (err) {
+        console.warn('Could not load profiles');
+        cachedProfiles = [];
+      }
       
       if (isAdmin) {
-        await loadAllowedUsers();
+        try {
+          await loadAllowedUsers();
+        } catch (err) {
+          console.warn('Could not load allowed users');
+          cachedAllowedUsers = [];
+        }
       }
     }
     
