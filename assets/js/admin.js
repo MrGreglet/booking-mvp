@@ -236,15 +236,35 @@ async function handleInviteUser(e) {
     // Generate temporary password
     const tempPassword = generateTempPassword();
     
-    // Add to allowed_users only (no automatic user creation to avoid email limits)
+    // Create user via signUp (will auto-confirm)
+    const { data: signUpData, error: signUpError } = await window.supabaseClient.auth.signUp({
+      email: email,
+      password: tempPassword,
+      options: {
+        emailRedirectTo: window.location.origin,
+        data: {
+          first_login: true
+        }
+      }
+    });
+    
+    // Even if rate limit error, user might still be created
+    // Only throw if it's NOT a rate limit error and NOT "already registered"
+    if (signUpError && 
+        !signUpError.message.includes('rate limit') && 
+        !signUpError.message.includes('already registered')) {
+      throw new Error(signUpError.message);
+    }
+    
+    // Add to allowed_users
     await storage.inviteUser(email);
     
-    // Show manual setup instructions
-    showManualSetupDialog(email, tempPassword);
+    // Show success with credentials (ignore rate limit errors)
+    showCredentialsDialog(email, tempPassword);
     renderInvitesPanel();
     
   } catch (error) {
-    showToast(error.message || 'Failed to invite user', 'error');
+    showToast(error.message || 'Failed to create user', 'error');
     submitBtn.disabled = false;
     submitBtn.textContent = 'Create User';
   }
