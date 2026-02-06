@@ -236,52 +236,17 @@ async function handleInviteUser(e) {
     // Generate temporary password
     const tempPassword = generateTempPassword();
     
-    // First check if user exists in auth.users
-    const { data: existingUsers } = await window.supabaseClient.auth.admin.listUsers();
-    const userExists = existingUsers?.users?.some(u => u.email === email);
-    
-    if (!userExists) {
-      // Create user via signUp (this creates the auth user)
-      const { data: signUpData, error: signUpError } = await window.supabaseClient.auth.signUp({
-        email: email,
-        password: tempPassword,
-        options: {
-          data: {
-            first_login: true
-          }
-        }
-      });
-      
-      if (signUpError && !signUpError.message.includes('already registered')) {
-        throw new Error(signUpError.message);
-      }
-    }
-    
-    // Add to allowed_users
+    // Add to allowed_users only (no automatic user creation to avoid email limits)
     await storage.inviteUser(email);
     
-    // Show success with credentials
-    showCredentialsDialog(email, tempPassword);
+    // Show manual setup instructions
+    showManualSetupDialog(email, tempPassword);
     renderInvitesPanel();
     
   } catch (error) {
-    // If error is about admin API, fall back to simple invite
-    if (error.message.includes('admin') || error.message.includes('service_role')) {
-      const tempPassword = generateTempPassword();
-      try {
-        await storage.inviteUser(email);
-        showManualSetupDialog(email, tempPassword);
-        renderInvitesPanel();
-      } catch (err2) {
-        showToast(err2.message || 'Failed to invite user', 'error');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Create User';
-      }
-    } else {
-      showToast(error.message || 'Failed to create user', 'error');
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Create User';
-    }
+    showToast(error.message || 'Failed to invite user', 'error');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Create User';
   }
 }
 
