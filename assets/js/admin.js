@@ -65,23 +65,21 @@ async function handleAdminLogin(e) {
   
   try {
     const result = await storage.signInWithPassword(email, password);
-    console.log('Login successful, user:', result.user.email);
     
-    // Wait for auth state to update
     await new Promise(r => setTimeout(r, 500));
-    
-    // Check if admin
-    console.log('Checking admin access...');
-    const hasAccess = await checkAdminAccess();
-    console.log('Admin access:', hasAccess);
+    let hasAccess = await checkAdminAccess();
+    if (!hasAccess) {
+      await storage.loadAll();
+      hasAccess = await checkAdminAccess();
+    }
     
     if (!hasAccess) {
       await storage.signOut();
       throw new Error('Admin access required - this email is not in the admin_users table');
     }
     
-    // Success - initialize dashboard
-    console.log('Initializing admin dashboard...');
+    document.getElementById('admin-login').style.display = 'none';
+    document.getElementById('admin-app').style.display = 'block';
     await init();
     
   } catch (error) {

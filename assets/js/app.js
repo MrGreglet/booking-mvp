@@ -214,6 +214,7 @@ async function handleLogout() {
 
 function openPasswordChangePanel() {
   const panel = document.getElementById('slidein-panel');
+  if (!panel) return;
   
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
   html += `<h2>Change Password Required</h2>`;
@@ -232,12 +233,9 @@ function openPasswordChangePanel() {
   html += `<button type="submit" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--primary); color: #232526; border: none; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;">Change Password</button>`;
   html += `</form>`;
   
-  panel.innerHTML = html;
-  openSlidein();
-  
-  // Prevent closing
-  const closeBtn = panel.querySelector('.close-btn');
-  closeBtn.style.display = 'none';
+  openSlidein(html);
+  const closeBtn = panel?.querySelector('.close-btn');
+  if (closeBtn) closeBtn.style.display = 'none';
   
   // Handle form submit
   const form = document.getElementById('password-change-form');
