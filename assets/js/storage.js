@@ -341,16 +341,13 @@ async function updateProfile(userId, updates) {
 // ========== BOOKINGS ==========
 
 async function loadBookings() {
-  // Everyone sees all approved bookings (to know what's unavailable)
-  // Non-admins also see their own pending/cancelled/declined
-  let query = db
+  // RLS policies now handle visibility:
+  // - Non-admins see: their own bookings (all statuses) + all approved bookings
+  // - Admins see: all bookings
+  const query = db
     .from('bookings')
     .select('*')
     .order('start_time', { ascending: true });
-  
-  if (!isAdmin && currentUser) {
-    query = query.or(`status.eq.approved,user_id.eq.${currentUser.id}`);
-  }
   
   const { data, error } = await query;
   

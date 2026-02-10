@@ -64,27 +64,29 @@ async function handleAdminLogin(e) {
   console.log('Attempting login for:', email);
   
   try {
+    // Sign in
     const result = await storage.signInWithPassword(email, password);
     
+    // Wait and reload all data to ensure admin status is checked
     await new Promise(r => setTimeout(r, 500));
-    let hasAccess = await checkAdminAccess();
-    if (!hasAccess) {
-      await storage.loadAll();
-      hasAccess = await checkAdminAccess();
-    }
+    await storage.loadAll();
     
-    if (!hasAccess) {
+    // Check admin access (reads from storage state, doesn't update UI yet)
+    const currentUser = storage.getCurrentUser();
+    const isAdmin = storage.getIsAdmin();
+    
+    if (!currentUser || !isAdmin) {
       await storage.signOut();
       throw new Error('Admin access required - this email is not in the admin_users table');
     }
     
+    // Admin verified - NOW update UI
     const loginPanel = document.getElementById('admin-login');
     const appPanel = document.getElementById('admin-app');
     if (loginPanel) loginPanel.style.display = 'none';
     if (appPanel) appPanel.style.display = 'block';
     
-    await storage.loadAll();
-    
+    // Setup navigation and render initial panel
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.onclick = () => switchPanel(btn.getAttribute('data-panel'));
     });
@@ -94,6 +96,13 @@ async function handleAdminLogin(e) {
   } catch (error) {
     const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';
     errorEl.textContent = errMsg;
+    
+    // Reset form and ensure login panel is visible
+    const loginPanel = document.getElementById('admin-login');
+    const appPanel = document.getElementById('admin-app');
+    if (loginPanel) loginPanel.style.display = 'flex';
+    if (appPanel) appPanel.style.display = 'none';
+    
     emailInput.disabled = false;
     passwordInput.disabled = false;
     submitBtn.disabled = false;
