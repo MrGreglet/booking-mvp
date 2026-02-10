@@ -649,7 +649,6 @@ function renderBookingsPanel() {
   panel.innerHTML = html;
   
   // If we have bookings, ensure calendar shows the week of the first upcoming one
-  const upcomingBookings = bookings.filter(b => new Date(b.startISO) >= new Date());
   if (upcomingBookings.length > 0) {
     const firstBookingStart = new Date(upcomingBookings[0].startISO);
     const bookingWeekStart = getWeekStart(firstBookingStart);
