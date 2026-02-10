@@ -434,7 +434,7 @@ function renderCalendar() {
       if (isPast) {
         slotClass = 'slot-cell past';
       } else {
-        // Find all bookings in this slot (including declined)
+        // Find all bookings in this slot
         const slotBookings = bookings.filter(b => {
           if (b.status === 'cancelled') return false; // Skip cancelled
           const start = new Date(b.startISO);
@@ -442,27 +442,23 @@ function renderCalendar() {
           return slotDate >= start && slotDate < end;
         });
         
-        // Prioritize current user's booking if they have one
-        let booking = slotBookings.find(b => b.userId === currentUser.id);
-        if (!booking) {
-          // If no user booking, show any other booking
-          booking = slotBookings.find(b => b.status !== 'declined');
-        }
+        // Check if current user has a booking here
+        const myBooking = slotBookings.find(b => b.userId === currentUser.id);
         
-        if (booking) {
-          const isMyBooking = booking.userId === currentUser.id;
-          
-          if (booking.status === 'approved') {
-            // Green for own approved, gray for others
-            slotClass = isMyBooking ? 'slot-cell my-approved' : 'slot-cell booked';
-          } else if (booking.status === 'pending') {
-            // Yellow for own pending, gray for others
-            slotClass = isMyBooking ? 'slot-cell my-pending' : 'slot-cell pending';
-          } else if (booking.status === 'declined') {
-            // Red for own declined, skip for others
-            if (isMyBooking) {
-              slotClass = 'slot-cell my-declined';
-            }
+        if (myBooking) {
+          // Show user's own booking with color coding
+          if (myBooking.status === 'approved') {
+            slotClass = 'slot-cell my-approved'; // Bright green
+          } else if (myBooking.status === 'pending') {
+            slotClass = 'slot-cell my-pending'; // Yellow
+          } else if (myBooking.status === 'declined') {
+            slotClass = 'slot-cell my-declined'; // Red
+          }
+        } else {
+          // Check if someone else has an approved booking (blocks the slot)
+          const othersApprovedBooking = slotBookings.find(b => b.status === 'approved');
+          if (othersApprovedBooking) {
+            slotClass = 'slot-cell booked'; // Gray - slot is blocked
           }
         }
         
