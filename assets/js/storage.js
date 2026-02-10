@@ -28,46 +28,55 @@ let isAdmin = false;
 // ========== AUTH MANAGEMENT ==========
 
 async function initAuth() {
+  let session = null;
+  let sessionError = null;
+
   try {
-    // Get current session
-    const { data: { session }, error } = await db.auth.getSession();
-    
-    if (error) {
-      // Invalid session - clear it
-      console.warn('Invalid session detected, clearing...');
-      await db.auth.signOut();
-      return null;
-    }
-    
-    if (session) {
-      currentSession = session;
-      currentUser = session.user;
-      
-      // Check if user is admin
-      await checkAdminStatus();
-      
-      // Ensure profile exists
-      try {
-        await db.rpc('get_or_create_profile');
-      } catch (err) {
-        // Silently fail if profile creation errors (user might not have access)
-        console.log('Profile check skipped');
-      }
-      
-      return currentUser;
-    }
-    
-    return null;
+    const result = await db.auth.getSession();
+    session = result?.data?.session ?? null;
+    sessionError = result?.error ?? null;
   } catch (error) {
-    // Catch any unexpected errors and clear session
-    console.warn('Auth initialization error, clearing session');
+    console.warn('Auth getSession failed (network/abort):', error?.message || error);
+    return currentUser;
+  }
+
+  if (sessionError) {
+    console.warn('Invalid session detected, clearing...');
     try {
       await db.auth.signOut();
     } catch (e) {
-      // Ignore signOut errors
+      /* ignore */
     }
+    currentUser = null;
+    currentSession = null;
+    isAdmin = false;
     return null;
   }
+
+  if (session) {
+    currentSession = session;
+    currentUser = session.user;
+
+    try {
+      await checkAdminStatus();
+    } catch (err) {
+      console.warn('Admin check failed:', err?.message || err);
+      /* leave isAdmin unchanged - may have been set by signInWithPassword */
+    }
+
+    try {
+      await db.rpc('get_or_create_profile');
+    } catch (err) {
+      /* profile creation optional */
+    }
+
+    return currentUser;
+  }
+
+  currentUser = null;
+  currentSession = null;
+  isAdmin = false;
+  return null;
 }
 
 async function checkAdminStatus() {
@@ -193,7 +202,7 @@ db.auth.onAuthStateChange(async (event, session) => {
         await checkAdminStatus();
       } catch (err) {
         console.warn('Could not check admin status:', err.message);
-        isAdmin = false;
+        /* leave isAdmin unchanged - may have been set by signInWithPassword */
       }
       
       // Ensure profile exists
@@ -381,23 +390,29 @@ async function requestBooking(startISO, endISO, userNotes = '') {
   if (!currentUser) {
     throw new Error('Must be logged in to book');
   }
-  
-  try {
+
+  async function doRequest() {
     const { data, error } = await db.rpc('request_booking', {
       p_start: startISO,
       p_end: endISO,
       p_user_notes: userNotes || null
     });
-    
-    if (error) {
-      throw new Error(error.message || 'Failed to create booking');
-    }
-    
+    if (error) throw new Error(error.message || 'Failed to create booking');
     await loadBookings();
     return data;
+  }
+
+  try {
+    return await doRequest();
   } catch (error) {
-    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
-      throw new Error('Connection was interrupted. Please refresh the page and try again.');
+    const isAbort = error?.name === 'AbortError' || error?.message?.includes('aborted');
+    if (isAbort) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        return await doRequest();
+      } catch (retryErr) {
+        throw new Error('Connection was interrupted. Please refresh the page and try again.');
+      }
     }
     throw error;
   }
