@@ -68,7 +68,23 @@ async function handleAdminLogin(e) {
     const result = await storage.signInWithPassword(email, password);
     
     // Wait for auth state to settle
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Verify we're logged in
+    let currentUser = storage.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('Login failed - no user session');
+    }
+    
+    // Check admin status first (most important)
+    let isAdmin = storage.getIsAdmin();
+    
+    if (!isAdmin) {
+      await storage.signOut();
+      throw new Error('Admin access required - this email is not in the admin_users table');
+    }
+    
+    console.log('Admin verified, loading data...');
     
     // Load data without re-initializing auth
     try {
@@ -95,14 +111,7 @@ async function handleAdminLogin(e) {
       console.warn('Could not load allowed users');
     }
     
-    // Check admin access (reads from storage state, doesn't update UI yet)
-    const currentUser = storage.getCurrentUser();
-    const isAdmin = storage.getIsAdmin();
-    
-    if (!currentUser || !isAdmin) {
-      await storage.signOut();
-      throw new Error('Admin access required - this email is not in the admin_users table');
-    }
+    console.log('Data loaded successfully');
     
     // Admin verified - NOW update UI
     const loginPanel = document.getElementById('admin-login');

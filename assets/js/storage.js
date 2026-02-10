@@ -232,19 +232,8 @@ db.auth.onAuthStateChange(async (event, session) => {
       currentSession = session;
       currentUser = session.user;
       
-      try {
-        await checkAdminStatus();
-      } catch (err) {
-        console.warn('Could not check admin status:', err.message);
-        /* leave isAdmin unchanged - may have been set by signInWithPassword */
-      }
-      
-      // Ensure profile exists
-      try {
-        await db.rpc('get_or_create_profile');
-      } catch (err) {
-        console.log('Profile check skipped');
-      }
+      // Don't do heavy operations here - let the calling code handle it
+      // Just update the session and user state
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       currentSession = null;
