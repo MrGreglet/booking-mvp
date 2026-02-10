@@ -352,6 +352,7 @@ function renderCalendar() {
         slotClass = 'slot-cell past';
       } else {
         const booking = bookings.find(b => {
+          if (b.status === 'cancelled' || b.status === 'declined') return false;
           const start = new Date(b.startISO);
           const end = new Date(b.endISO);
           return slotDate >= start && slotDate < end;
@@ -363,7 +364,6 @@ function renderCalendar() {
           } else if (booking.status === 'pending') {
             slotClass = 'slot-cell pending';
           }
-          // declined/cancelled slots are treated as available
         }
         
         slotData = `data-date="${slotISO}"`;
@@ -384,6 +384,53 @@ function renderCalendar() {
       cell.onclick = () => openBookingPanel(cell.getAttribute('data-date'));
     });
   }
+  
+  renderMyBookingsList();
+}
+
+// ============================================================
+// MY BOOKINGS LIST (below calendar - includes cancelled/declined)
+// ============================================================
+
+function renderMyBookingsList() {
+  const listEl = document.getElementById('my-bookings-list');
+  const sectionEl = document.getElementById('my-bookings-section');
+  if (!listEl || !sectionEl) return;
+  
+  if (!currentUser) {
+    sectionEl.style.display = 'none';
+    return;
+  }
+  
+  const bookings = storage.getBookings()
+    .filter(b => b.userId === currentUser.id)
+    .sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
+  
+  sectionEl.style.display = 'block';
+  
+  if (bookings.length === 0) {
+    listEl.innerHTML = '<p class="bookings-list-empty">No bookings yet.</p>';
+    return;
+  }
+  
+  let html = '<ul class="bookings-list">';
+  for (const b of bookings) {
+    const statusClass = b.status === 'approved' ? 'approved' :
+                       b.status === 'declined' ? 'declined' :
+                       b.status === 'cancelled' ? 'cancelled' : 'pending';
+    html += `<li class="booking-item status-${statusClass}">
+      <span class="booking-date">${formatDateYMD(new Date(b.startISO))}</span>
+      <span class="booking-time">${formatTimeHM(new Date(b.startISO))}–${formatTimeHM(new Date(b.endISO))}</span>
+      <span class="booking-status status-${statusClass}">${b.status}</span>
+      ${b.status === 'pending' ? `<button class="cancel-booking-btn small" data-id="${b.id}">Cancel</button>` : ''}
+    </li>`;
+  }
+  html += '</ul>';
+  listEl.innerHTML = html;
+  
+  listEl.querySelectorAll('.cancel-booking-btn').forEach(btn => {
+    btn.onclick = () => confirmCancelBooking(btn.getAttribute('data-id'));
+  });
 }
 
 // ============================================================

@@ -390,17 +390,15 @@ async function requestBooking(startISO, endISO, userNotes = '') {
     });
     
     if (error) {
-      // Extract meaningful error message
-      const errorMsg = error.message || 'Failed to create booking';
-      throw new Error(errorMsg);
+      throw new Error(error.message || 'Failed to create booking');
     }
     
-    // Refresh bookings
     await loadBookings();
-    
-    return data; // Returns booking ID
+    return data;
   } catch (error) {
-    console.error('Error requesting booking:', error);
+    if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
+      throw new Error('Connection was interrupted. Please refresh the page and try again.');
+    }
     throw error;
   }
 }
@@ -468,6 +466,56 @@ async function deleteBooking(bookingId) {
   
   // Refresh cache
   await loadBookings();
+}
+
+// Update booking (admin only) - date, time, duration, notes
+async function updateBooking(bookingId, { startISO, endISO, durationMinutes, userNotes, adminNotes }) {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
+  const updates = {};
+  if (startISO != null) updates.start_time = startISO;
+  if (endISO != null) updates.end_time = endISO;
+  if (durationMinutes != null) updates.duration_minutes = durationMinutes;
+  if (userNotes !== undefined) updates.user_notes = userNotes || null;
+  if (adminNotes !== undefined) updates.admin_notes = adminNotes || null;
+  
+  if (Object.keys(updates).length === 0) return;
+  
+  const { error } = await db
+    .from('bookings')
+    .update(updates)
+    .eq('id', bookingId);
+  
+  if (error) {
+    console.error('Error updating booking:', error);
+    throw error;
+  }
+  
+  await loadBookings();
+}
+
+// Admin create one-off booking (no user account required)
+async function adminCreateBooking(startISO, endISO, userEmail = 'Walk-in', userNotes = '', adminNotes = '') {
+  if (!isAdmin) {
+    throw new Error('Admin access required');
+  }
+  
+  const { data, error } = await db.rpc('admin_create_booking', {
+    p_start: startISO,
+    p_end: endISO,
+    p_user_email: userEmail || 'Walk-in',
+    p_user_notes: userNotes || null,
+    p_admin_notes: adminNotes || null
+  });
+  
+  if (error) {
+    throw new Error(error.message || 'Failed to create booking');
+  }
+  
+  await loadBookings();
+  return data;
 }
 
 // Invite user (admin only)
@@ -657,6 +705,8 @@ window.storage = {
   // Admin functions
   setBookingStatus,
   deleteBooking,
+  updateBooking,
+  adminCreateBooking,
   inviteUser,
   removeInvite,
   loadAllowedUsers,

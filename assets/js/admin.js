@@ -487,9 +487,12 @@ function renderBookingsPanel() {
   document.getElementById('pending-badge').textContent = pendingCount;
   
   let html = `
-    <div class="panel-header">
-      <h2>Bookings Calendar</h2>
-      <span class="info-text">${pendingCount} pending approval</span>
+    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h2>Bookings Calendar</h2>
+        <span class="info-text">${pendingCount} pending approval</span>
+      </div>
+      <button class="primary" id="admin-add-booking-btn">+ Add Booking</button>
     </div>
     
     <!-- Calendar Navigation -->
@@ -550,6 +553,7 @@ function renderBookingsPanel() {
             ${booking.adminNotes ? `<div style="font-size: 0.85rem; color: var(--primary);">Admin: ${booking.adminNotes}</div>` : ''}
           </td>
           <td>
+            <button class="action-btn secondary view-btn" data-id="${booking.id}">View</button>
             ${booking.status === 'pending' ? `
               <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
               <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
@@ -596,6 +600,9 @@ function renderBookingsPanel() {
     renderAdminCalendar();
   };
   
+  const addBookingBtn = document.getElementById('admin-add-booking-btn');
+  if (addBookingBtn) addBookingBtn.onclick = openCreateBookingForm;
+  
   // Bind events using event delegation
   panel.addEventListener('click', async (e) => {
     const target = e.target;
@@ -603,7 +610,9 @@ function renderBookingsPanel() {
     
     if (!bookingId) return;
     
-    if (target.classList.contains('approve-btn')) {
+    if (target.classList.contains('view-btn')) {
+      openAdminBookingDetails(bookingId);
+    } else if (target.classList.contains('approve-btn')) {
       await handleApproveBooking(bookingId);
     } else if (target.classList.contains('decline-btn')) {
       await handleDeclineBooking(bookingId);
@@ -670,14 +679,12 @@ function renderAdminCalendar() {
         const slotTime = slotDate.getTime();
         const isPast = slotDate < new Date();
         
-        // Check if there's a booking at this slot - compare using timestamps (handles timezones)
+        // Only approved/pending occupy slots; cancelled/declined are free for new bookings
         const booking = bookings.find(b => {
+          if (b.status === 'cancelled' || b.status === 'declined') return false;
           const start = new Date(b.startISO);
           const end = new Date(b.endISO);
-          const startTime = start.getTime();
-          const endTime = end.getTime();
-          // Slot falls within booking if slotTime is >= start and < end
-          return slotTime >= startTime && slotTime < endTime;
+          return slotTime >= start.getTime() && slotTime < end.getTime();
         });
         
         let slotClass = 'slot-cell';
@@ -685,10 +692,11 @@ function renderAdminCalendar() {
         if (booking) {
           if (booking.status === 'pending') slotClass += ' pending';
           else if (booking.status === 'approved') slotClass += ' booked';
-          else if (booking.status === 'declined') slotClass += ' declined';
         }
         
-        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-id="${booking ? booking.id : ''}"></div>`;
+        const slotBookingId = booking ? booking.id : '';
+        const isEmptySlot = !slotBookingId && !isPast;
+        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-id="${slotBookingId}" data-empty="${isEmptySlot}"></div>`;
       }
       
       html += '</div>';
@@ -698,12 +706,17 @@ function renderAdminCalendar() {
   html += '</div>';
   grid.innerHTML = html;
   
-  // Add click handler for slots with bookings
   grid.querySelectorAll('.slot-cell').forEach(cell => {
     const bookingId = cell.getAttribute('data-booking-id');
+    const isEmpty = cell.getAttribute('data-empty') === 'true';
     if (bookingId) {
       cell.style.cursor = 'pointer';
       cell.onclick = () => openAdminBookingDetails(bookingId);
+    } else if (isEmpty) {
+      cell.style.cursor = 'pointer';
+      cell.onclick = () => {
+        openCreateBookingForm(cell.getAttribute('data-slot'));
+      };
     }
   });
 }
@@ -745,17 +758,20 @@ function openAdminBookingDetails(bookingId) {
     html += `<div class="form-actions">`;
     html += `<button class="primary" id="approve-detail-btn">Approve</button>`;
     html += `<button class="danger" id="decline-detail-btn">Decline</button>`;
+    html += `<button class="secondary" id="edit-detail-btn">Edit</button>`;
     html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
     html += `<button class="secondary close-dialog-btn">Close</button>`;
     html += `</div>`;
   } else if (booking.status === 'approved') {
     html += `<div class="form-actions">`;
     html += `<button class="danger" id="cancel-detail-btn">Cancel Booking</button>`;
+    html += `<button class="secondary" id="edit-detail-btn">Edit</button>`;
     html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
     html += `<button class="secondary close-dialog-btn">Close</button>`;
     html += `</div>`;
   } else {
     html += `<div class="form-actions">`;
+    html += `<button class="secondary" id="edit-detail-btn">Edit</button>`;
     html += `<button class="danger" id="delete-detail-btn">Delete</button>`;
     html += `<button class="secondary close-dialog-btn">Close</button>`;
     html += `</div>`;
@@ -795,8 +811,14 @@ function openAdminBookingDetails(bookingId) {
   const deleteBtn = document.getElementById('delete-detail-btn');
   if (deleteBtn) {
     deleteBtn.onclick = () => {
-      closeSlidein();
       confirmDeleteBooking(bookingId);
+    };
+  }
+  
+  const editBtn = document.getElementById('edit-detail-btn');
+  if (editBtn) {
+    editBtn.onclick = () => {
+      openEditBookingForm(bookingId);
     };
   }
 }
@@ -870,6 +892,160 @@ function confirmDeleteBooking(bookingId) {
       renderBookingsPanel();
     } catch (error) {
       showToast(error.message || 'Failed to delete booking', 'error');
+    }
+  };
+}
+
+function openEditBookingForm(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  const start = new Date(booking.startISO);
+  const end = new Date(booking.endISO);
+  const dateStr = formatDateYMD(start);
+  const startTimeStr = formatTimeHM(start);
+  const endTimeStr = formatTimeHM(end);
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Edit Booking</h2>`;
+  html += `<form id="edit-booking-form">
+    <div class="form-group">
+      <label for="edit-date">Date</label>
+      <input type="date" id="edit-date" value="${dateStr}" required>
+    </div>
+    <div class="form-group">
+      <label for="edit-start-time">Start Time</label>
+      <input type="time" id="edit-start-time" value="${startTimeStr}" required>
+    </div>
+    <div class="form-group">
+      <label for="edit-end-time">End Time</label>
+      <input type="time" id="edit-end-time" value="${endTimeStr}" required>
+    </div>
+    <div class="form-group">
+      <label for="edit-user-notes">User Notes</label>
+      <textarea id="edit-user-notes" rows="2">${booking.userNotes || ''}</textarea>
+    </div>
+    <div class="form-group">
+      <label for="edit-admin-notes">Admin Notes</label>
+      <textarea id="edit-admin-notes" rows="2">${booking.adminNotes || ''}</textarea>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary">Save Changes</button>
+      <button type="button" class="secondary close-dialog-btn">Cancel</button>
+    </div>
+  </form>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
+  
+  document.getElementById('edit-booking-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const date = document.getElementById('edit-date').value;
+    const startTime = document.getElementById('edit-start-time').value;
+    const endTime = document.getElementById('edit-end-time').value;
+    const userNotes = document.getElementById('edit-user-notes').value.trim();
+    const adminNotes = document.getElementById('edit-admin-notes').value.trim();
+    
+    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
+    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
+    const durationMinutes = Math.round((new Date(endISO) - new Date(startISO)) / 60000);
+    
+    if (durationMinutes < 60) {
+      showToast('Duration must be at least 1 hour', 'error');
+      return;
+    }
+    if (durationMinutes % 30 !== 0) {
+      showToast('Duration must be a multiple of 30 minutes', 'error');
+      return;
+    }
+    
+    try {
+      await storage.updateBooking(bookingId, { startISO, endISO, durationMinutes, userNotes, adminNotes });
+      showToast('Booking updated', 'success');
+      closeSlidein();
+      renderBookingsPanel();
+    } catch (error) {
+      showToast(error.message || 'Failed to update booking', 'error');
+    }
+  };
+}
+
+function openCreateBookingForm(slotISO) {
+  const startDate = slotISO ? new Date(slotISO) : new Date();
+  const dateStr = formatDateYMD(startDate);
+  const startTime = slotISO ? formatTimeHM(startDate) : '14:00';
+  const endTime = slotISO ? formatTimeHM(addMinutes(startDate, 60)) : '15:00';
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Add New Booking</h2>`;
+  html += `<p style="color: var(--text-muted); margin-bottom: 1rem;">Create a one-off booking without requiring a user account.</p>`;
+  html += `<form id="create-booking-form">
+    <div class="form-group">
+      <label for="create-client-name">Client / Display Name</label>
+      <input type="text" id="create-client-name" placeholder="Walk-in" value="Walk-in">
+    </div>
+    <div class="form-group">
+      <label for="create-date">Date</label>
+      <input type="date" id="create-date" value="${dateStr}" required>
+    </div>
+    <div class="form-group">
+      <label for="create-start-time">Start Time</label>
+      <input type="time" id="create-start-time" value="${startTime}" required>
+    </div>
+    <div class="form-group">
+      <label for="create-end-time">End Time</label>
+      <input type="time" id="create-end-time" value="${endTime}" required>
+    </div>
+    <div class="form-group">
+      <label for="create-user-notes">Notes (optional)</label>
+      <textarea id="create-user-notes" rows="2" placeholder="Any notes for this booking"></textarea>
+    </div>
+    <div class="form-group">
+      <label for="create-admin-notes">Admin Notes (optional)</label>
+      <textarea id="create-admin-notes" rows="2" placeholder="Internal notes"></textarea>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="primary">Create Booking</button>
+      <button type="button" class="secondary close-dialog-btn">Cancel</button>
+    </div>
+  </form>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
+  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
+  
+  document.getElementById('create-booking-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const clientName = document.getElementById('create-client-name').value.trim() || 'Walk-in';
+    const date = document.getElementById('create-date').value;
+    const startTime = document.getElementById('create-start-time').value;
+    const endTime = document.getElementById('create-end-time').value;
+    const userNotes = document.getElementById('create-user-notes').value.trim();
+    const adminNotes = document.getElementById('create-admin-notes').value.trim();
+    
+    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
+    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
+    
+    const durationMinutes = Math.round((new Date(endISO) - new Date(startISO)) / 60000);
+    if (durationMinutes < 60) {
+      showToast('Duration must be at least 1 hour', 'error');
+      return;
+    }
+    if (durationMinutes % 30 !== 0) {
+      showToast('Duration must be a multiple of 30 minutes', 'error');
+      return;
+    }
+    
+    try {
+      await storage.adminCreateBooking(startISO, endISO, clientName, userNotes, adminNotes);
+      showToast('Booking created', 'success');
+      closeSlidein();
+      renderBookingsPanel();
+    } catch (error) {
+      showToast(error.message || 'Failed to create booking', 'error');
     }
   };
 }

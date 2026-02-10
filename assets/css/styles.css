@@ -999,12 +999,21 @@ body.admin-bg {
 
 /* --- Admin login & app --- */
 .admin-login-panel {
-  max-width: 340px;
-  margin: 7vh auto 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.admin-login-panel > .admin-login-card {
+  width: 100%;
+  max-width: 420px;
   background: var(--bg-glass);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-panel);
-  padding: 2.5rem 2rem;
+  padding: 2.5rem 2.5rem;
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--border-glass);
   color: var(--text-main);
@@ -1014,31 +1023,37 @@ body.admin-bg {
 
 .admin-login-panel h2 {
   margin-top: 0;
-  color: var(--text-main);
+  margin-bottom: 0.5rem;
+  color: var(--accent);
   letter-spacing: 0.02em;
   font-weight: 700;
-  font-size: 2rem;
+  font-size: 1.75rem;
   text-align: center;
+  line-height: 1.3;
+}
+
+.admin-login-panel .form-group {
+  margin-bottom: 1.25rem;
 }
 
 .admin-login-panel label {
   display: block;
-  margin-bottom: 0.3rem;
+  margin-bottom: 0.4rem;
   color: var(--text-muted);
   font-weight: 500;
-  font-size: 1.08rem;
+  font-size: 1rem;
 }
 
 .admin-login-panel input {
   width: 100%;
-  padding: 0.7rem;
+  padding: 0.85rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-glass);
-  margin-bottom: 1.2rem;
   background: var(--bg-input);
   color: var(--text-main);
-  font-size: 1.08rem;
+  font-size: 1rem;
   transition: border 0.18s, background 0.18s;
+  box-sizing: border-box;
 }
 
 .admin-login-panel input:focus {
@@ -1054,10 +1069,10 @@ body.admin-bg {
   font-weight: 600;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 0.8rem;
-  font-size: 1.13rem;
+  padding: 0.85rem 1rem;
+  font-size: 1.05rem;
   cursor: pointer;
-  margin-top: 0.5rem;
+  margin-top: 0.25rem;
   box-shadow: var(--shadow-soft);
   transition: background 0.2s, color 0.2s;
 }
@@ -1376,6 +1391,66 @@ body.admin-bg {
   padding: 0.4rem 0.8rem;
   font-size: 0.9rem;
   width: auto;
+}
+
+/* My Bookings list below calendar (includes cancelled/declined) */
+.bookings-list-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-glass);
+}
+.bookings-list-section h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: var(--text-main);
+}
+.bookings-list-empty {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+.bookings-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.bookings-list .booking-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-glass);
+}
+.bookings-list .booking-item.status-cancelled,
+.bookings-list .booking-item.status-declined {
+  opacity: 0.75;
+}
+.bookings-list .booking-date {
+  font-weight: 600;
+  min-width: 5.5rem;
+}
+.bookings-list .booking-time {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.bookings-list .booking-status {
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.bookings-list .booking-status.status-approved { background: rgba(76, 175, 80, 0.3); color: #a5d6a7; }
+.bookings-list .booking-status.status-pending { background: rgba(230, 184, 0, 0.3); color: #fff59d; }
+.bookings-list .booking-status.status-cancelled { background: rgba(158, 158, 158, 0.3); color: #bdbdbd; }
+.bookings-list .booking-status.status-declined { background: rgba(201, 74, 74, 0.3); color: #ef9a9a; }
+.bookings-list .cancel-booking-btn.small {
+  margin-left: auto;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
 }
 
 /* --- Tables & admin nav --- */

@@ -9,19 +9,25 @@
 </head>
 <body class="admin-bg">
   <div id="admin-login" class="admin-login-panel">
-    <h2>Admin Access Required</h2>
-    <p style="text-align: center; color: var(--text-muted); margin-bottom: 1.5rem;">
-      Log in with your admin credentials.
-    </p>
-    <form id="admin-login-form">
-      <label for="admin-email">Email</label>
-      <input type="email" id="admin-email" placeholder="admin@studio94.com" autocomplete="email" required>
-      <label for="admin-password">Password</label>
-      <input type="password" id="admin-password" placeholder="Password" autocomplete="current-password" required>
-      <button type="submit" id="admin-login-btn">Login</button>
-    </form>
-    <div id="admin-login-status" class="login-status"></div>
-    <div id="admin-login-error" class="error-msg"></div>
+    <div class="admin-login-card">
+      <h2>Admin Access Required</h2>
+      <p style="text-align: center; color: var(--text-muted); margin-bottom: 1.5rem;">
+        Log in with your admin credentials.
+      </p>
+      <form id="admin-login-form">
+        <div class="form-group">
+          <label for="admin-email">Email</label>
+          <input type="email" id="admin-email" placeholder="admin@studio94.com" autocomplete="email" required>
+        </div>
+        <div class="form-group">
+          <label for="admin-password">Password</label>
+          <input type="password" id="admin-password" placeholder="Password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="admin-login-btn">Login</button>
+      </form>
+      <div id="admin-login-status" class="login-status"></div>
+      <div id="admin-login-error" class="error-msg"></div>
+    </div>
   </div>
   <div id="admin-app" class="admin-app" style="display:none;">
     <header class="top-bar admin-top-bar">

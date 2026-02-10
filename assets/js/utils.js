@@ -127,7 +127,6 @@ function openSlidein(html) {
     if (typeof console !== 'undefined' && console.error) console.error('openSlidein: #slidein-panel not found');
     return;
   }
-  if (typeof console !== 'undefined' && console.log) console.log('openSlidein');
   panel.innerHTML = html;
   panel.classList.add('open');
 }
