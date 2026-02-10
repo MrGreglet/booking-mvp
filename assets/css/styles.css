@@ -82,6 +82,22 @@ body {
   -webkit-font-smoothing: antialiased;
   margin: 0;
   min-height: 100vh;
+  /* Safe area for notched iPhones */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Touch optimizations - remove tap delay, cleaner highlight */
+button,
+a,
+.slot-cell,
+.nav-btn,
+.action-btn,
+.booking-card,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.15);
+  touch-action: manipulation;
 }
 
 body.public-bg,
@@ -1010,6 +1026,7 @@ body.admin-bg {
     right: 0;
     padding: 1rem 0.75rem;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   #slidein-panel.open {
     max-height: 100vh;
@@ -1034,6 +1051,7 @@ body.admin-bg {
   .admin-calendar-grid {
     grid-template-columns: 50px repeat(7, minmax(60px, 1fr));
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     font-size: 0.85rem;
   }
   .calendar-grid .calendar-header,
@@ -1161,6 +1179,39 @@ body.admin-bg {
   .slidein-panel select,
   .slidein-panel textarea {
     font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+/* Touch feedback - subtle active state for touch devices */
+@media (hover: none) and (pointer: coarse) {
+  button:active,
+  .action-btn:active,
+  .nav-btn:active,
+  .primary:active,
+  .secondary:active,
+  .danger:active {
+    opacity: 0.9;
+  }
+  .slot-cell:active:not(.past) {
+    opacity: 0.9;
+  }
+}
+
+/* Ensure minimum touch target size (44px Apple guideline) */
+@media (max-width: 700px) {
+  button,
+  .action-btn,
+  .nav-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .slidein-panel .close-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
