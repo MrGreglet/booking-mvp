@@ -622,6 +622,24 @@ body.admin-bg {
   border-color: var(--primary) !important;
 }
 
+/* Booking count badge on multiple-pending slots */
+.slot-cell .booking-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(234, 88, 12, 0.9);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+  z-index: 5;
+  pointer-events: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
 /* Booked/Approved: green tint */
 .calendar-grid .slot-cell.booked,
 .admin-calendar-grid .slot-cell.booked {

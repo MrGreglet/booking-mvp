@@ -534,8 +534,18 @@ function renderBookingsPanel() {
   const panel = document.getElementById('admin-panel-bookings');
   const now = new Date();
   
-  // Sort bookings: closest to current date first
+  // Sort bookings: pending first, then by closest to current date
   const allBookings = storage.getBookings().sort((a, b) => {
+    // Sort by status first: pending > approved > cancelled/declined
+    const statusOrder = { 'pending': 0, 'approved': 1, 'declined': 2, 'cancelled': 3 };
+    const aStatusOrder = statusOrder[a.status] ?? 99;
+    const bStatusOrder = statusOrder[b.status] ?? 99;
+    
+    if (aStatusOrder !== bStatusOrder) {
+      return aStatusOrder - bStatusOrder;
+    }
+    
+    // Then sort by closest to current date
     const aStart = new Date(a.startISO);
     const bStart = new Date(b.startISO);
     const aDiff = Math.abs(aStart - now);
@@ -776,9 +786,11 @@ function renderAdminCalendar() {
         if (isPast) slotClass += ' past';
         
         // Check if multiple bookings in same slot
+        let slotContent = '';
         if (slotBookings.length > 1) {
-          // Multiple bookings - show as special color
+          // Multiple bookings - show as special color with count
           slotClass += ' multiple-pending';
+          slotContent = `<span class="booking-count">${slotBookings.length}</span>`;
         } else if (slotBookings.length === 1) {
           // Single booking
           const booking = slotBookings[0];
@@ -788,7 +800,7 @@ function renderAdminCalendar() {
         
         const slotBookingIds = slotBookings.map(b => b.id).join(',');
         const isEmptySlot = slotBookings.length === 0 && !isPast;
-        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-ids="${slotBookingIds}" data-empty="${isEmptySlot}"></div>`;
+        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-ids="${slotBookingIds}" data-empty="${isEmptySlot}">${slotContent}</div>`;
       }
       
       html += '</div>';
@@ -834,7 +846,7 @@ function openMultipleBookingsPanel(bookingIds) {
   html += `<h2>Multiple Bookings (${bookings.length})</h2>`;
   html += `<p style="color: var(--text-muted); margin-bottom: 1.5rem;">Multiple users have requested this time slot. Click on a booking to view details.</p>`;
   
-  html += `<div style="display: flex; flex-direction: column; gap: 1rem;">`;
+  html += `<div id="multiple-bookings-list" style="display: flex; flex-direction: column; gap: 1rem;">`;
   
   for (const booking of bookings) {
     const start = new Date(booking.startISO);
@@ -844,7 +856,7 @@ function openMultipleBookingsPanel(bookingIds) {
                        booking.status === 'cancelled' ? 'secondary' : 'warning';
     
     html += `
-      <div class="booking-card" onclick="openAdminBookingDetails('${booking.id}')" style="cursor: pointer; background: var(--bg-glass); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-glass); transition: all 0.2s;">
+      <div class="booking-card" data-booking-id="${booking.id}" style="cursor: pointer; background: var(--bg-glass); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-glass); transition: all 0.2s;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
           <strong>${booking.userEmail}</strong>
           <span class="badge badge-${statusClass}">${booking.status}</span>
@@ -861,6 +873,14 @@ function openMultipleBookingsPanel(bookingIds) {
   
   openSlidein(html);
   document.querySelector('.close-btn').onclick = closeSlidein;
+  
+  // Set up click handlers for booking cards
+  document.querySelectorAll('.booking-card[data-booking-id]').forEach(card => {
+    card.onclick = () => {
+      const bookingId = card.getAttribute('data-booking-id');
+      openAdminBookingDetails(bookingId);
+    };
+  });
 }
 
 function openAdminBookingDetails(bookingId) {
