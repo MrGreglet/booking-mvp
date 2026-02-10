@@ -527,10 +527,29 @@ async function handleUpdateProfile(e, userId) {
 // Current week for admin calendar
 let adminCurrentWeekStart = getWeekStart(new Date());
 
+// Track whether to show past bookings
+let showPastBookings = false;
+
 function renderBookingsPanel() {
   const panel = document.getElementById('admin-panel-bookings');
-  const bookings = storage.getBookings().sort((a, b) => new Date(a.startISO) - new Date(b.startISO));
-  const pendingCount = bookings.filter(b => b.status === 'pending').length;
+  const now = new Date();
+  
+  // Sort bookings: closest to current date first
+  const allBookings = storage.getBookings().sort((a, b) => {
+    const aStart = new Date(a.startISO);
+    const bStart = new Date(b.startISO);
+    const aDiff = Math.abs(aStart - now);
+    const bDiff = Math.abs(bStart - now);
+    return aDiff - bDiff;
+  });
+  
+  // Split into upcoming and past
+  const upcomingBookings = allBookings.filter(b => new Date(b.startISO) >= now);
+  const pastBookings = allBookings.filter(b => new Date(b.startISO) < now);
+  
+  // Determine which bookings to show
+  const bookingsToShow = showPastBookings ? allBookings : upcomingBookings;
+  const pendingCount = allBookings.filter(b => b.status === 'pending').length;
   
   // Update badge
   document.getElementById('pending-badge').textContent = pendingCount;
@@ -558,13 +577,20 @@ function renderBookingsPanel() {
     </div>
     
     <!-- Bookings Table Below -->
-    <div class="panel-header" style="margin-top: 2rem;">
-      <h3>All Bookings List</h3>
+    <div class="panel-header" style="margin-top: 2rem; display: flex; justify-content: space-between; align-items: center;">
+      <h3>Bookings List (${upcomingBookings.length} upcoming${pastBookings.length > 0 ? `, ${pastBookings.length} past` : ''})</h3>
+      ${pastBookings.length > 0 ? `
+        <button class="secondary" id="toggle-past-bookings-btn" style="font-size: 0.9rem;">
+          ${showPastBookings ? 'Hide Past Bookings' : 'Show Past Bookings'}
+        </button>
+      ` : ''}
     </div>
   `;
   
-  if (bookings.length === 0) {
-    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">No bookings yet.</div>`;
+  if (bookingsToShow.length === 0) {
+    html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">
+      ${showPastBookings ? 'No bookings found.' : 'No upcoming bookings.'}
+    </div>`;
   } else {
     html += `
       <table class="table">
@@ -581,18 +607,20 @@ function renderBookingsPanel() {
         <tbody>
     `;
     
-    for (const booking of bookings) {
+    for (const booking of bookingsToShow) {
       const start = new Date(booking.startISO);
       const end = new Date(booking.endISO);
+      const isPast = start < now;
       const statusClass = booking.status === 'approved' ? 'badge-success' :
                          booking.status === 'declined' ? 'badge-danger' :
                          booking.status === 'cancelled' ? 'badge-secondary' : 'badge-warning';
       
       html += `
-        <tr>
+        <tr ${isPast ? 'style="opacity: 0.6;"' : ''}>
           <td>
             <b>${formatDateYMD(start)}</b><br>
             ${formatTimeHM(start)} - ${formatTimeHM(end)}
+            ${isPast ? '<span style="color: var(--text-muted); font-size: 0.8rem;"> (past)</span>' : ''}
           </td>
           <td>${booking.userEmail}</td>
           <td>${booking.durationMinutes} min</td>
@@ -603,10 +631,10 @@ function renderBookingsPanel() {
           </td>
           <td>
             <button class="action-btn secondary view-btn" data-id="${booking.id}">View</button>
-            ${booking.status === 'pending' ? `
+            ${booking.status === 'pending' && !isPast ? `
               <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
               <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
-            ` : booking.status === 'approved' ? `
+            ` : booking.status === 'approved' && !isPast ? `
               <button class="action-btn danger cancel-booking-btn" data-id="${booking.id}">Cancel</button>
             ` : ''}
             <button class="action-btn danger delete-btn" data-id="${booking.id}">Delete</button>
@@ -651,6 +679,15 @@ function renderBookingsPanel() {
   
   const addBookingBtn = document.getElementById('admin-add-booking-btn');
   if (addBookingBtn) addBookingBtn.onclick = openCreateBookingForm;
+  
+  // Toggle past bookings button
+  const togglePastBtn = document.getElementById('toggle-past-bookings-btn');
+  if (togglePastBtn) {
+    togglePastBtn.onclick = () => {
+      showPastBookings = !showPastBookings;
+      renderBookingsPanel();
+    };
+  }
   
   // Bind events using event delegation
   panel.addEventListener('click', async (e) => {
@@ -728,8 +765,8 @@ function renderAdminCalendar() {
         const slotTime = slotDate.getTime();
         const isPast = slotDate < new Date();
         
-        // Only approved/pending occupy slots; cancelled/declined are free for new bookings
-        const booking = bookings.find(b => {
+        // Find ALL bookings in this slot (not just first one)
+        const slotBookings = bookings.filter(b => {
           if (b.status === 'cancelled' || b.status === 'declined') return false;
           const start = new Date(b.startISO);
           const end = new Date(b.endISO);
@@ -738,14 +775,21 @@ function renderAdminCalendar() {
         
         let slotClass = 'slot-cell';
         if (isPast) slotClass += ' past';
-        if (booking) {
+        
+        // Check if multiple bookings in same slot
+        if (slotBookings.length > 1) {
+          // Multiple bookings - show as special color
+          slotClass += ' multiple-pending';
+        } else if (slotBookings.length === 1) {
+          // Single booking
+          const booking = slotBookings[0];
           if (booking.status === 'pending') slotClass += ' pending';
           else if (booking.status === 'approved') slotClass += ' booked';
         }
         
-        const slotBookingId = booking ? booking.id : '';
-        const isEmptySlot = !slotBookingId && !isPast;
-        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-id="${slotBookingId}" data-empty="${isEmptySlot}"></div>`;
+        const slotBookingIds = slotBookings.map(b => b.id).join(',');
+        const isEmptySlot = slotBookings.length === 0 && !isPast;
+        html += `<div class="${slotClass}" data-slot="${slotISO}" data-booking-ids="${slotBookingIds}" data-empty="${isEmptySlot}"></div>`;
       }
       
       html += '</div>';
@@ -756,11 +800,20 @@ function renderAdminCalendar() {
   grid.innerHTML = html;
   
   grid.querySelectorAll('.slot-cell').forEach(cell => {
-    const bookingId = cell.getAttribute('data-booking-id');
+    const bookingIdsStr = cell.getAttribute('data-booking-ids');
     const isEmpty = cell.getAttribute('data-empty') === 'true';
-    if (bookingId) {
+    
+    if (bookingIdsStr && bookingIdsStr.length > 0) {
+      const bookingIds = bookingIdsStr.split(',').filter(id => id.length > 0);
       cell.style.cursor = 'pointer';
-      cell.onclick = () => openAdminBookingDetails(bookingId);
+      
+      if (bookingIds.length > 1) {
+        // Multiple bookings in this slot - show selection panel
+        cell.onclick = () => openMultipleBookingsPanel(bookingIds);
+      } else if (bookingIds.length === 1) {
+        // Single booking - show details directly
+        cell.onclick = () => openAdminBookingDetails(bookingIds[0]);
+      }
     } else if (isEmpty) {
       cell.style.cursor = 'pointer';
       cell.onclick = () => {
@@ -768,6 +821,47 @@ function renderAdminCalendar() {
       };
     }
   });
+}
+
+function openMultipleBookingsPanel(bookingIds) {
+  const bookings = storage.getBookings().filter(b => bookingIds.includes(b.id));
+  
+  if (bookings.length === 0) {
+    showToast('Bookings not found', 'error');
+    return;
+  }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Multiple Bookings (${bookings.length})</h2>`;
+  html += `<p style="color: var(--text-muted); margin-bottom: 1.5rem;">Multiple users have requested this time slot. Click on a booking to view details.</p>`;
+  
+  html += `<div style="display: flex; flex-direction: column; gap: 1rem;">`;
+  
+  for (const booking of bookings) {
+    const start = new Date(booking.startISO);
+    const end = new Date(booking.endISO);
+    const statusClass = booking.status === 'approved' ? 'success' :
+                       booking.status === 'declined' ? 'danger' :
+                       booking.status === 'cancelled' ? 'secondary' : 'warning';
+    
+    html += `
+      <div class="booking-card" onclick="openAdminBookingDetails('${booking.id}')" style="cursor: pointer; background: var(--bg-glass); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-glass); transition: all 0.2s;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong>${booking.userEmail}</strong>
+          <span class="badge badge-${statusClass}">${booking.status}</span>
+        </div>
+        <div style="font-size: 0.9rem; color: var(--text-muted);">
+          ${formatDateYMD(start)} ${formatTimeHM(start)} - ${formatTimeHM(end)} (${booking.durationMinutes} min)
+        </div>
+        ${booking.userNotes ? `<div style="font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${booking.userNotes}"</div>` : ''}
+      </div>
+    `;
+  }
+  
+  html += `</div>`;
+  
+  openSlidein(html);
+  document.querySelector('.close-btn').onclick = closeSlidein;
 }
 
 function openAdminBookingDetails(bookingId) {

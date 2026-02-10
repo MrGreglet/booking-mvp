@@ -590,6 +590,38 @@ body.admin-bg {
   z-index: 3;
 }
 
+/* Multiple pending bookings in same slot */
+.admin-calendar-grid .slot-cell.multiple-pending {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.4) 0%, rgba(234, 88, 12, 0.4) 100%);
+  color: var(--text-main);
+  cursor: pointer;
+  position: relative;
+}
+
+.admin-calendar-grid .slot-cell.multiple-pending::after {
+  content: '⚠';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+  color: rgba(251, 191, 36, 1);
+}
+
+.admin-calendar-grid .slot-cell.multiple-pending:hover {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.5) 0%, rgba(234, 88, 12, 0.5) 100%);
+  outline: 2px solid rgba(234, 88, 12, 0.8);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* Booking card hover effect */
+.booking-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-color: var(--primary) !important;
+}
+
 /* Booked/Approved: green tint */
 .calendar-grid .slot-cell.booked,
 .admin-calendar-grid .slot-cell.booked {
