@@ -442,8 +442,8 @@ function renderCalendar() {
           return slotDate >= start && slotDate < end;
         });
         
-        // Check if current user has a booking here
-        const myBooking = slotBookings.find(b => b.userId === currentUser.id);
+        // Check if current user has a booking here (with type-safe comparison)
+        const myBooking = slotBookings.find(b => String(b.userId) === String(currentUser.id));
         
         if (myBooking) {
           // Show user's own booking with color coding
