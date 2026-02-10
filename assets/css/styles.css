@@ -693,7 +693,84 @@ body.admin-bg {
   background: rgba(34, 197, 94, 0.3);
 }
 
-/* Declined bookings */
+/* User's own approved booking - bright green */
+.calendar-grid .slot-cell.my-approved {
+  background: rgba(34, 197, 94, 0.4);
+  color: var(--text-main);
+  cursor: pointer;
+  position: relative;
+}
+
+.calendar-grid .slot-cell.my-approved::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  color: rgba(34, 197, 94, 1);
+  font-weight: bold;
+}
+
+.calendar-grid .slot-cell.my-approved:hover {
+  background: rgba(34, 197, 94, 0.5);
+  outline: 2px solid rgba(34, 197, 94, 0.8);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* User's own pending booking - yellow/amber */
+.calendar-grid .slot-cell.my-pending {
+  background: rgba(251, 191, 36, 0.35);
+  color: var(--text-main);
+  cursor: pointer;
+  position: relative;
+}
+
+.calendar-grid .slot-cell.my-pending::after {
+  content: '⏱';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1rem;
+  color: rgba(251, 191, 36, 1);
+}
+
+.calendar-grid .slot-cell.my-pending:hover {
+  background: rgba(251, 191, 36, 0.45);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* User's own declined booking - red */
+.calendar-grid .slot-cell.my-declined {
+  background: rgba(239, 68, 68, 0.35);
+  color: var(--text-main);
+  cursor: pointer;
+  position: relative;
+}
+
+.calendar-grid .slot-cell.my-declined::after {
+  content: '✗';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  color: rgba(239, 68, 68, 1);
+  font-weight: bold;
+}
+
+.calendar-grid .slot-cell.my-declined:hover {
+  background: rgba(239, 68, 68, 0.45);
+  outline: 2px solid rgba(239, 68, 68, 0.8);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* Declined bookings (admin view) */
 .calendar-grid .slot-cell.declined,
 .admin-calendar-grid .slot-cell.declined {
   background: rgba(239, 68, 68, 0.25);

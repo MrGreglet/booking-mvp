@@ -434,18 +434,28 @@ function renderCalendar() {
       if (isPast) {
         slotClass = 'slot-cell past';
       } else {
+        // Find any booking in this slot (including declined)
         const booking = bookings.find(b => {
-          if (b.status === 'cancelled' || b.status === 'declined') return false;
+          if (b.status === 'cancelled') return false; // Skip cancelled
           const start = new Date(b.startISO);
           const end = new Date(b.endISO);
           return slotDate >= start && slotDate < end;
         });
         
         if (booking) {
+          const isMyBooking = booking.userId === currentUser.id;
+          
           if (booking.status === 'approved') {
-            slotClass = 'slot-cell booked';
+            // Green for own approved, gray for others
+            slotClass = isMyBooking ? 'slot-cell my-approved' : 'slot-cell booked';
           } else if (booking.status === 'pending') {
-            slotClass = 'slot-cell pending';
+            // Yellow for own pending, gray for others
+            slotClass = isMyBooking ? 'slot-cell my-pending' : 'slot-cell pending';
+          } else if (booking.status === 'declined') {
+            // Red for own declined, skip for others
+            if (isMyBooking) {
+              slotClass = 'slot-cell my-declined';
+            }
           }
         }
         
@@ -643,6 +653,50 @@ function bindWeekNav() {
 }
 
 // ============================================================
+// BOOKING NOTIFICATIONS
+// ============================================================
+
+function checkBookingNotifications() {
+  if (!currentUser) return;
+  
+  const lastSeenKey = `lastSeen_${currentUser.id}`;
+  const lastSeen = localStorage.getItem(lastSeenKey);
+  const now = Date.now();
+  
+  // Get user's bookings
+  const myBookings = storage.getBookings().filter(b => b.userId === currentUser.id);
+  
+  // Check for recently updated bookings (last 48 hours if first login, or since last seen)
+  const cutoffTime = lastSeen ? parseInt(lastSeen) : (now - 48 * 60 * 60 * 1000);
+  
+  const recentUpdates = myBookings.filter(b => {
+    const updatedAt = new Date(b.createdAt).getTime(); // Using createdAt as proxy for updated
+    return updatedAt > cutoffTime && (b.status === 'approved' || b.status === 'declined');
+  });
+  
+  // Show notifications for recent updates
+  if (recentUpdates.length > 0) {
+    setTimeout(() => {
+      for (const booking of recentUpdates) {
+        const start = new Date(booking.startISO);
+        const dateStr = formatDateYMD(start);
+        const timeStr = formatTimeHM(start);
+        
+        if (booking.status === 'approved') {
+          showToast(`✅ Booking APPROVED: ${dateStr} at ${timeStr}`, 'success');
+        } else if (booking.status === 'declined') {
+          const reason = booking.adminNotes ? `\nReason: ${booking.adminNotes}` : '';
+          showToast(`❌ Booking DECLINED: ${dateStr} at ${timeStr}${reason}`, 'error');
+        }
+      }
+    }, 1000); // Delay to avoid overlap with welcome message
+  }
+  
+  // Update last seen timestamp
+  localStorage.setItem(lastSeenKey, now.toString());
+}
+
+// ============================================================
 // INITIALIZATION
 // ============================================================
 
@@ -684,6 +738,10 @@ async function init() {
     updateWeekLabel();
     renderCalendar();
     bindWeekNav();
+    
+    // Check for booking notifications
+    checkBookingNotifications();
+    
     showToast(`Welcome back, ${(currentUser?.email || 'User').split('@')[0]}!`);
   } catch (error) {
     console.error('Initialization error:', error);
