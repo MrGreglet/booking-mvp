@@ -661,12 +661,19 @@ body.admin-bg {
   z-index: 3;
 }
 
-/* Admin calendar: general clickable slots (empty/no class) */
-.admin-calendar-grid .slot-cell:not(.past):not(.booked):not(.pending):not(.multiple-pending):not(.blocked):not(.available):hover {
+/* Admin calendar: all slots get hover effect by default */
+.admin-calendar-grid .slot-cell:hover {
   background: rgba(255, 255, 255, 0.08);
   outline: 2px solid var(--primary);
   outline-offset: -2px;
   z-index: 3;
+}
+
+/* Past slots should not have hover (admin can click but no highlight) */
+.admin-calendar-grid .slot-cell.past:hover {
+  background: rgba(0, 0, 0, 0.3);
+  outline: none;
+  z-index: 2;
 }
 
 .calendar-grid .slot-cell.booked::after {
