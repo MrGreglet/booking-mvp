@@ -25,6 +25,23 @@ let currentUser = null;
 let currentSession = null;
 let isAdmin = false;
 
+// Retry data fetch on AbortError (auth state change often aborts in-flight requests)
+async function fetchWithAbortRetry(fetchFn, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const result = await fetchFn();
+      const err = result?.error;
+      const isAbort = err && (String(err.message || '').toLowerCase().includes('abort') || err.name === 'AbortError');
+      if (!err || (!isAbort || i === retries)) return result;
+    } catch (e) {
+      const isAbort = (e?.message || '').toLowerCase().includes('abort') || e?.name === 'AbortError';
+      if (!isAbort || i === retries) throw e;
+    }
+    await new Promise(r => setTimeout(r, 350 * (i + 1)));
+  }
+  return { data: null, error: { message: 'AbortError' } };
+}
+
 // ========== AUTH MANAGEMENT ==========
 
 async function initAuth() {
@@ -225,25 +242,24 @@ function getSettings() {
 }
 
 async function loadSettings() {
-  const { data, error } = await db
-    .from('settings')
-    .select('*')
-    .eq('id', 'default')
-    .single();
+  const { data, error } = await fetchWithAbortRetry(() =>
+    db.from('settings').select('*').eq('id', 'default').single()
+  );
   
   if (error) {
     console.error('Error loading settings:', error);
     return DEFAULT_SETTINGS;
   }
   
-  cachedSettings = {
-    openTime: data.business_hours_start,
-    closeTime: data.business_hours_end,
-    bufferMinutes: data.buffer_minutes,
-    slotIntervalMinutes: data.slot_interval_minutes
-  };
-  
-  return cachedSettings;
+  if (data) {
+    cachedSettings = {
+      openTime: data.business_hours_start,
+      closeTime: data.business_hours_end,
+      bufferMinutes: data.buffer_minutes,
+      slotIntervalMinutes: data.slot_interval_minutes
+    };
+  }
+  return cachedSettings || DEFAULT_SETTINGS;
 }
 
 async function setSettings(updates) {
@@ -275,35 +291,24 @@ async function setSettings(updates) {
 
 async function loadProfiles() {
   if (!isAdmin) {
-    // Non-admins can only see their own profile
     if (!currentUser) return [];
-    
-    const { data, error } = await db
-      .from('profiles')
-      .select('*')
-      .eq('user_id', currentUser.id)
-      .single();
-    
+    const { data, error } = await fetchWithAbortRetry(() =>
+      db.from('profiles').select('*').eq('user_id', currentUser.id).single()
+    );
     if (error) {
       console.error('Error loading profile:', error);
       return [];
     }
-    
     cachedProfiles = data ? [data] : [];
     return cachedProfiles;
   }
-  
-  // Admins can see all profiles
-  const { data, error } = await db
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
+  const { data, error } = await fetchWithAbortRetry(() =>
+    db.from('profiles').select('*').order('created_at', { ascending: false })
+  );
   if (error) {
     console.error('Error loading profiles:', error);
     return [];
   }
-  
   cachedProfiles = data || [];
   return cachedProfiles;
 }
@@ -341,22 +346,16 @@ async function updateProfile(userId, updates) {
 // ========== BOOKINGS ==========
 
 async function loadBookings() {
-  // RLS policies now handle visibility:
-  // - Non-admins see: their own bookings (all statuses) + all approved bookings
-  // - Admins see: all bookings
-  const query = db
-    .from('bookings')
-    .select('*')
-    .order('start_time', { ascending: true });
-  
-  const { data, error } = await query;
+  // RLS policies: non-admins see own + all approved; admins see all
+  const { data, error } = await fetchWithAbortRetry(() =>
+    db.from('bookings').select('*').order('start_time', { ascending: true })
+  );
   
   if (error) {
     console.error('Error loading bookings:', error);
     return [];
   }
   
-  // Transform to match old format
   cachedBookings = (data || []).map(booking => ({
     id: booking.id,
     userId: booking.user_id,
@@ -587,8 +586,9 @@ function getAllowedUsers() {
 
 async function loadAll() {
   try {
-    // Initialize auth first
     await initAuth();
+    // Brief delay so auth state change from getSession() can settle (reduces AbortErrors)
+    await new Promise(r => setTimeout(r, 150));
     
     // Load settings (always - public data)
     try {
