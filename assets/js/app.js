@@ -1,6 +1,6 @@
 // ============================================================
-// APP.JS - Public Booking UI (Magic Link Auth)
-// Invite-only access with Supabase Auth
+// APP.JS - Public Booking UI (Password Auth)
+// Password-based access with Supabase Auth
 // ============================================================
 
 (() => {
@@ -15,7 +15,6 @@ const storage = window.storage;
 
 let currentUser = null;
 let currentWeekStart = getWeekStart(new Date());
-let isCheckingMagicLink = false;
 
 // ============================================================
 // AUTH & USER BAR
@@ -25,18 +24,11 @@ function renderUserBar() {
   const bar = document.getElementById('user-bar');
   
   if (!currentUser) {
-    bar.innerHTML = `
-      <form id="login-form" class="login-form">
-        <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
-        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
-        <button type="submit" id="login-submit-btn">Login</button>
-      </form>
-      <span id="login-status" class="login-status"></span>
-    `;
-    
-    const form = document.getElementById('login-form');
-    form.onsubmit = handlePasswordLogin;
-  } else {
+    // Login form is on login-page - nothing to render in user-bar
+    return;
+  }
+  
+  {
     // Check if needs password change
     if (storage.needsPasswordChange()) {
       openPasswordChangePanel();
@@ -72,6 +64,25 @@ function renderUserBar() {
   }
 }
 
+function hideLoadingOverlay() {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function showLoginView() {
+  hideLoadingOverlay();
+  document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('app-view').style.display = 'none';
+  const form = document.getElementById('login-form');
+  if (form) form.onsubmit = handlePasswordLogin;
+}
+
+function showAppView() {
+  hideLoadingOverlay();
+  document.getElementById('app-view').style.display = 'block';
+  document.getElementById('login-page').style.display = 'none';
+}
+
 async function handlePasswordLogin(e) {
   e.preventDefault();
   
@@ -94,6 +105,7 @@ async function handlePasswordLogin(e) {
     
     // Success - will trigger auth state change
     showToast('Logged in successfully!');
+    showAppView();
     await init();
   } catch (error) {
     // Error
@@ -114,30 +126,10 @@ async function handlePasswordLogin(e) {
 async function handleLogout() {
   await storage.signOut();
   currentUser = null;
-  renderUserBar();
-  renderCalendar();
+  showLoginView();
   showToast('Logged out');
 }
 
-// Check for magic link redirect on page load
-async function checkMagicLinkRedirect() {
-  if (isCheckingMagicLink) return;
-  isCheckingMagicLink = true;
-  
-  const hashParams = new URLSearchParams(window.location.hash.substring(1));
-  const accessToken = hashParams.get('access_token');
-  
-  if (accessToken) {
-    showToast('Logging in...');
-    
-    // Clear the hash
-    window.history.replaceState(null, '', window.location.pathname);
-    
-    // Wait for auth to process
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    await init();
-  }
-}
 
 // ============================================================
 // PASSWORD CHANGE PANEL
@@ -532,24 +524,28 @@ async function init() {
     // Get current user
     currentUser = storage.getCurrentUser();
     
-    // Render UI
+    // Show login page or app view
+    if (!currentUser) {
+      showLoginView();
+      return;
+    }
+    
+    showAppView();
     renderUserBar();
     updateWeekLabel();
     renderCalendar();
     bindWeekNav();
     
-    if (currentUser) {
-      showToast(`Welcome back, ${currentUser.email.split('@')[0]}!`);
-    }
+    showToast(`Welcome back, ${currentUser.email.split('@')[0]}!`);
   } catch (error) {
     console.error('Initialization error:', error);
+    showLoginView(); // Show login on error so user can retry
     showToast('Failed to load application', 'error');
   }
 }
 
 // Start the app
 document.addEventListener('DOMContentLoaded', async () => {
-  await checkMagicLinkRedirect();
   await init();
 });
 

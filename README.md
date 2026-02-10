@@ -1,6 +1,6 @@
 # Studio94 Booking System
 
-**Invite-only booking platform with passwordless magic link authentication and enterprise-grade security.**
+**Invite-only booking platform with password authentication and enterprise-grade security.**
 
 Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorphism dark theme and real-time data synchronization.
 
@@ -8,24 +8,24 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 
 ## 🔐 Security-First Architecture
 
-- **Invite-Only Access**: Only pre-approved emails can log in
-- **Magic Link Auth**: No passwords to remember or steal
+- **Invite-Only Access**: Only pre-approved users can log in
+- **Password Authentication**: Secure password-based login
 - **Server-Side Validation**: All booking rules enforced by PostgreSQL functions
 - **Row Level Security (RLS)**: Database-level access control
-- **Edge Function Gateway**: Validates invites before sending magic links
+- **First-Login Password Change**: Users must change temporary password on first login
 
 ---
 
 ## Features
 
 ### 🎟️ Invite System (Admin)
-- **Invite Management**: Add/remove user email access
-- **Admin Control**: Only admins can invite new users
-- **Real-time Updates**: Invites sync across all devices
+- **User Creation**: Create users with auto-generated temporary passwords
+- **Admin Control**: Only admins can create new users
+- **Real-time Updates**: User list syncs across all devices
 - **Audit Trail**: Track who invited whom
 
 ### 👤 User Experience
-- **Passwordless Login**: Enter email → receive magic link → logged in
+- **Password Login**: Enter email and password to log in
 - **Week Calendar View**: Browse available time slots
 - **Instant Booking**: Request bookings with optional notes
 - **My Bookings**: View all your bookings (pending, approved, declined)
@@ -35,7 +35,7 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 
 ### 🛠️ Admin Dashboard
 - **4-Tab Interface**: Invites | Profiles | Bookings | Settings
-- **Invite Management**: Add/remove user access
+- **User Management**: Create users with temporary passwords
 - **Profile Editor**: Manage user memberships and contracts
 - **Booking Approval**: Approve, decline, or cancel bookings
 - **Conflict Detection**: Automatic overlap prevention
@@ -48,13 +48,12 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 - **Buffer Enforcement**: 30-minute minimum gap between bookings
 - **Weekly Limits**: Max 1 booking/week for subscribed users
 - **Conflict Prevention**: Server validates all booking overlaps
-- **Invite Validation**: Only invited emails can create bookings
+- **Invite Validation**: Only invited users can create bookings
 
 ### 🚀 Technical Highlights
-- **Supabase Auth**: Built-in passwordless authentication
+- **Supabase Auth**: Built-in password authentication
 - **PostgreSQL RLS**: Row-level security policies
 - **RPC Functions**: Server-side business logic
-- **Edge Functions**: Secure magic link delivery
 - **Real-time Sync**: Multi-device data synchronization
 - **Zero Dependencies**: Pure vanilla JavaScript
 - **Responsive Design**: Mobile-first UI with glassmorphism
@@ -71,21 +70,14 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 │  │ (index.html) │         │ (admin.html) │         │
 │  └──────┬───────┘         └──────┬───────┘         │
 │         │                        │                  │
-│         │  Magic Link Request    │                  │
+│         │  Password Login        │                  │
 │         └────────────┬───────────┘                  │
 └──────────────────────┼──────────────────────────────┘
                        │
            ┌───────────▼───────────┐
-           │  Edge Function        │
-           │  /request-magic-link  │
-           │  • Check allowlist    │
-           │  • Send magic link    │
-           └───────────┬───────────┘
-                       │
-           ┌───────────▼───────────┐
            │  Supabase Backend     │
            ├───────────────────────┤
-           │  • Auth (magic links) │
+           │  • Auth (passwords)   │
            │  • PostgreSQL DB      │
            │  • RLS Policies       │
            │  • RPC Functions      │
@@ -112,13 +104,7 @@ booking-mvp/
 ├── admin.html                              # Admin dashboard
 ├── DEPLOYMENT.md                           # Complete setup guide
 ├── TEST_PLAN.md                            # Comprehensive test plan
-├── supabase-auth-migration.sql             # Database migration (replaces old schema)
-├── supabase/
-│   ├── functions/
-│   │   └── request-magic-link/
-│   │       └── index.ts                    # Edge Function for magic link validation
-│   ├── config.toml                         # Supabase project config
-│   └── functions/.env.example              # Environment variables template
+├── supabase-auth-migration.sql             # Database migration
 ├── assets/
 │   ├── css/
 │   │   └── styles.css                      # Glassmorphism dark theme
@@ -137,17 +123,17 @@ booking-mvp/
 
 ### For Users
 
-1. **Get Invited**: Admin must add your email to the system
-2. **Request Login Link**: Go to site, enter your email, click "Send Login Link"
-3. **Check Email**: Click the magic link (expires in 1 hour)
+1. **Get Account**: Admin must create an account for you
+2. **Receive Credentials**: Admin provides email and temporary password
+3. **First Login**: Log in and change your temporary password
 4. **Book Session**: Click available slot, choose duration, submit request
 5. **Wait for Approval**: Admin will approve/decline your booking
 
 ### For Admins
 
 1. **Get Admin Access**: Your email must be in `admin_users` table
-2. **Login**: Request magic link at `/admin.html`
-3. **Invite Users**: Go to Invites tab, click "+ Invite User"
+2. **Login**: Use email and password at `/admin.html`
+3. **Create Users**: Go to Invites tab, click "Invite User"
 4. **Approve Bookings**: Go to Bookings tab, review pending requests
 5. **Manage Profiles**: Edit user memberships and contracts
 
@@ -161,9 +147,9 @@ booking-mvp/
 
 1. **Database Setup**: Run `supabase-auth-migration.sql` in Supabase SQL Editor
 2. **Create Admin**: Insert your user_id into `admin_users` table
-3. **Deploy Edge Function**: `supabase functions deploy request-magic-link`
-4. **Set Secrets**: Configure service role key and redirect URL
-5. **Push to GitHub**: Enable GitHub Pages for hosting
+3. **Configure Auth**: Enable email/password auth in Supabase Dashboard
+4. **Update Config**: Edit `assets/js/supabase-config.js` with your project credentials
+5. **Deploy**: Push to GitHub and enable GitHub Pages for hosting
 
 ---
 
@@ -173,10 +159,11 @@ booking-mvp/
 
 ### Critical Tests
 
-✅ Non-invited email cannot request magic link  
-✅ Invited email receives magic link  
+✅ Non-invited user cannot log in  
+✅ Invited user can log in with password  
+✅ First-time users must change password  
 ✅ Non-admin cannot access admin dashboard  
-✅ Admin can invite/remove users  
+✅ Admin can create/remove users  
 ✅ Booking conflicts detected (30-min buffer)  
 ✅ Weekly limits enforced for subscribed users  
 ✅ RLS policies prevent unauthorized access  
@@ -188,7 +175,7 @@ booking-mvp/
 
 ### Core Tables
 
-**`allowed_users`** - Invite allowlist
+**`allowed_users`** - User allowlist
 - `email` (PK) - User email
 - `invited_by` (FK) - Admin who invited
 - `created_at` - Invite timestamp
@@ -260,11 +247,11 @@ Checks:
 ## Security
 
 ### Authentication
-- ✅ Magic links (Supabase Auth)
+- ✅ Password-based authentication (Supabase Auth)
 - ✅ Invite-only access
-- ✅ Edge Function validates allowlist before sending links
-- ✅ Links expire in 1 hour
-- ✅ No passwords stored anywhere
+- ✅ First-login password change required
+- ✅ Secure password storage (bcrypt)
+- ✅ Session management
 
 ### Authorization
 - ✅ RLS policies on all tables
@@ -284,16 +271,6 @@ Checks:
 
 ## Configuration
 
-### Environment Variables (Edge Function)
-
-```bash
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-MAGIC_LINK_REDIRECT_URL=https://your-site.com/
-```
-
-⚠️ **NEVER commit service_role key to GitHub!**
-
 ### Client Config
 
 File: `assets/js/supabase-config.js`
@@ -302,6 +279,8 @@ File: `assets/js/supabase-config.js`
 const SUPABASE_URL = 'https://your-project.supabase.co';
 const SUPABASE_ANON_KEY = 'your-anon-key'; // Safe to expose
 ```
+
+⚠️ **IMPORTANT**: Replace these values with your own Supabase project credentials!
 
 ---
 
@@ -315,10 +294,9 @@ const SUPABASE_ANON_KEY = 'your-anon-key'; // Safe to expose
 
 **Backend**
 - Supabase (managed PostgreSQL)
-- Supabase Auth (magic links)
+- Supabase Auth (password authentication)
 - Row Level Security (RLS)
 - PostgreSQL Functions (PL/pgSQL)
-- Edge Functions (Deno/TypeScript)
 
 **Hosting**
 - GitHub Pages (static hosting)
@@ -349,7 +327,6 @@ Requires:
 1. Clone repository
 2. Update `supabase-config.js` with your project credentials
 3. Open `index.html` in browser (no build step needed!)
-4. For Edge Function testing: `supabase functions serve`
 
 ### Debugging
 
@@ -383,24 +360,17 @@ console.log('Result:', data, error);
 ### "Admin access required" after login
 **Solution**: Add your user_id to admin_users table
 
-### Magic link not received
+### Invalid login credentials
 **Solution**: 
-1. Check Edge Function logs
-2. Verify email in allowed_users
-3. Check spam folder
-4. Verify secrets are set correctly
+1. Verify email is in allowed_users table
+2. Check password is correct
+3. Ensure user account exists in Supabase Auth
 
-### "Email not invited" error
-**Solution**: Admin must add email via Invites tab
+### User can't log in
+**Solution**: Admin must create account via Invites tab
 
 ### Booking conflict errors
 **Solution**: Check for overlapping approved bookings ± 30 minutes
-
----
-
-## License
-
-MIT License - See LICENSE file for details
 
 ---
 
@@ -416,7 +386,7 @@ For issues or questions:
 
 ## Roadmap
 
-- [ ] SMS notifications for booking status
+- [ ] Email notifications for booking status
 - [ ] Calendar export (iCal format)
 - [ ] Recurring bookings
 - [ ] Payment integration

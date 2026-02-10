@@ -8,25 +8,48 @@
   <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body class="public-bg">
-  <header class="top-bar">
-    <div class="logo">Studio94</div>
-    <div id="user-bar" class="user-bar">
-      <!-- Populated by JS: login form or user info -->
+  <!-- Loading overlay (hidden after init completes) -->
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <!-- Login page (shown when not logged in) -->
+  <div id="login-page" class="login-page" style="display: none;">
+    <div class="login-page-content">
+      <div class="logo">Studio94</div>
+      <h1>Booking</h1>
+      <form id="login-form" class="login-form login-form-centered">
+        <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" id="login-submit-btn">Login</button>
+      </form>
+      <span id="login-status" class="login-status"></span>
     </div>
-  </header>
-  <main>
-    <section class="calendar-section">
-      <div class="calendar-controls">
-        <button id="prev-week" aria-label="Previous week">&lt;</button>
-        <span id="week-label"></span>
-        <button id="next-week" aria-label="Next week">&gt;</button>
-        <button id="today-btn">Today</button>
+  </div>
+
+  <!-- App view (shown when logged in) -->
+  <div id="app-view" class="app-view" style="display: none;">
+    <header class="top-bar">
+      <div class="logo">Studio94</div>
+      <div id="user-bar" class="user-bar">
+        <!-- Populated by JS: user info -->
       </div>
-      <div id="calendar-grid" class="calendar-grid">
-        <!-- Calendar grid rendered by JS -->
-      </div>
-    </section>
-  </main>
+    </header>
+    <main>
+      <section class="calendar-section">
+        <div class="calendar-controls">
+          <button id="prev-week" aria-label="Previous week">&lt;</button>
+          <span id="week-label"></span>
+          <button id="next-week" aria-label="Next week">&gt;</button>
+          <button id="today-btn">Today</button>
+        </div>
+        <div id="calendar-grid" class="calendar-grid">
+          <!-- Calendar grid rendered by JS -->
+        </div>
+      </section>
+    </main>
+  </div>
   <div id="slidein-panel" class="slidein-panel">
     <!-- Slide-in booking form rendered by JS -->
   </div>

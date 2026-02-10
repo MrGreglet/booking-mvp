@@ -3,29 +3,28 @@
 ## ✅ Pre-Testing Setup (DO THESE FIRST!)
 
 ### 1. Apply Database Migration
-- [ ] Go to [SQL Editor](https://supabase.com/dashboard/project/qkjcqtsacuspfdslgfxj/editor)
+- [ ] Go to Supabase SQL Editor
 - [ ] Create new query
 - [ ] Paste entire contents of `supabase-auth-migration.sql`
 - [ ] Run query (should complete in ~10 seconds)
 
 ### 2. Set Up Admin Account
-- [ ] Add your email to allowlist:
-  ```sql
-  INSERT INTO allowed_users (email) VALUES ('your-email@example.com');
-  ```
-- [ ] Open your site and request magic link with your email
-- [ ] Click the magic link in your email
+- [ ] Create admin user in Supabase Dashboard → Authentication → Users
+- [ ] Use your email and a strong password
+- [ ] Enable "Auto Confirm User"
 - [ ] Get your user ID:
   ```sql
   SELECT id, email FROM auth.users WHERE email = 'your-email@example.com';
   ```
-- [ ] Make yourself admin (replace USER_ID):
+- [ ] Make yourself admin:
   ```sql
-  INSERT INTO admin_users (user_id) VALUES ('USER_ID_FROM_ABOVE');
+  INSERT INTO admin_users (user_id) VALUES ('YOUR_USER_ID_HERE');
+  INSERT INTO allowed_users (email) VALUES ('your-email@example.com');
   ```
 
-### 3. Deploy Edge Function
-- [ ] ✅ Already done! (`request-magic-link` deployed)
+### 3. Configure Frontend
+- [ ] Update `assets/js/supabase-config.js` with your Supabase URL and anon key
+- [ ] Deploy to GitHub Pages or test locally
 
 ---
 
@@ -33,27 +32,33 @@
 
 ### Test 1: Auth - Non-Invited User Blocked ❌
 - [ ] Open site in incognito mode
-- [ ] Try to log in with: `hacker@test.com`
-- [ ] Should show generic message but NOT send email
+- [ ] Try to log in with: `hacker@test.com` / any password
+- [ ] Should show error: "Invalid email or password"
 - [ ] **Expected**: Login denied
 
-### Test 2: Auth - Invited User Can Login ✅
-- [ ] Add test email to allowlist:
-  ```sql
-  INSERT INTO allowed_users (email) VALUES ('test@example.com');
-  ```
+### Test 2: Auth - Admin Can Login ✅
 - [ ] Open site
-- [ ] Enter `test@example.com`
-- [ ] Check email and click magic link
-- [ ] **Expected**: Redirected to site, logged in successfully
-
-### Test 3: Admin Dashboard Access 🔒
-- [ ] Log in with your admin email
 - [ ] Navigate to `/admin.html`
+- [ ] Enter admin email and password
 - [ ] **Expected**: See dashboard with tabs: Invites, Profiles, Bookings, Settings
 
-### Test 4: Non-Admin Cannot Access Dashboard ❌
-- [ ] Log in as regular user (`test@example.com`)
+### Test 3: Create New User
+- [ ] Admin → Invites tab
+- [ ] Click "+ Invite User"
+- [ ] Enter: `test@example.com`
+- [ ] Click "Create User"
+- [ ] **Expected**: Success dialog with temporary password
+- [ ] Copy the temporary password
+
+### Test 4: User First Login & Password Change
+- [ ] Log out from admin
+- [ ] Log in with test user email and temporary password
+- [ ] **Expected**: Prompted to change password
+- [ ] Set new password (8+ characters)
+- [ ] **Expected**: See calendar interface
+
+### Test 5: Non-Admin Cannot Access Dashboard ❌
+- [ ] Log in as test user
 - [ ] Try to navigate to `/admin.html`
 - [ ] **Expected**: Blocked with "Admin Access Required"
 
@@ -61,45 +66,41 @@
 
 ## 📅 Booking Flow Tests
 
-### Test 5: Create Booking Request
-- [ ] Log in as regular user
+### Test 6: Create Booking Request
+- [ ] Log in as test user
 - [ ] Click on tomorrow's date at 10:00 AM
 - [ ] Select duration: 2 hours
 - [ ] Add note: "Test booking"
 - [ ] Click "Submit Request"
 - [ ] **Expected**: "Booking request submitted! Waiting for admin approval"
 
-### Test 6: Admin Approves Booking
+### Test 7: Admin Approves Booking
 - [ ] Log in as admin
 - [ ] Go to `admin.html` → Bookings tab
-- [ ] See pending booking from Test 5
+- [ ] See pending booking from Test 6
 - [ ] Click "Approve" button
-- [ ] **Expected**: Status changes to "approved", toast shows success
+- [ ] **Expected**: Status changes to "approved", success toast
 
-### Test 7: User Sees Approved Booking
-- [ ] Log back in as regular user
+### Test 8: User Sees Approved Booking
+- [ ] Log back in as test user
 - [ ] Navigate to calendar
-- [ ] **Expected**: See booking shown as approved/confirmed (green)
+- [ ] **Expected**: See booking shown as approved (green/confirmed)
+- [ ] Click "My Bookings"
+- [ ] **Expected**: Booking listed with "approved" status
 
 ---
 
 ## 🚫 Validation Tests
 
-### Test 8: Buffer Conflict Detection
-- [ ] As regular user, try to book tomorrow 11:30-13:30
+### Test 9: Buffer Conflict Detection
+- [ ] As test user, try to book tomorrow 11:30-13:30
 - [ ] **Expected**: Error - "Booking conflicts with existing booking (including 30-minute buffer)"
 
-### Test 9: Short Duration Rejected
-- [ ] Try to book 30 minutes (requires direct RPC call or manual SQL)
-- [ ] **Expected**: Error - "Booking must be at least 1 hour"
-
 ### Test 10: Weekly Limit (Subscribed Users)
-- [ ] Set user to subscribed:
-  ```sql
-  UPDATE profiles SET membership = 'subscribed' WHERE email = 'test@example.com';
-  ```
-- [ ] Admin approves one booking this week
-- [ ] User tries to book another slot this week
+- [ ] Admin → Profiles tab → Edit test user
+- [ ] Set membership to "subscribed"
+- [ ] Save changes
+- [ ] Test user tries to book another slot this week
 - [ ] **Expected**: Error - "Weekly booking limit reached"
 
 ---
@@ -107,18 +108,19 @@
 ## 🛡️ Security Tests
 
 ### Test 11: RLS - User Cannot See Others' Bookings
-- [ ] Log in as User A
+- [ ] Create second user: `user2@example.com`
+- [ ] Create booking for user2
+- [ ] Log in as test user (first user)
 - [ ] Open browser console (F12)
 - [ ] Run:
   ```javascript
-  await window.supabaseClient
-    .from('bookings')
-    .select('*');
+  const { data } = await window.supabaseClient.from('bookings').select('*');
+  console.log(data);
   ```
-- [ ] **Expected**: Only see own bookings (not other users')
+- [ ] **Expected**: Only see own bookings (not user2's)
 
-### Test 12: RLS - Non-Admin Cannot Approve Bookings
-- [ ] Log in as regular user
+### Test 12: Non-Admin Cannot Call Admin Functions
+- [ ] Log in as test user (non-admin)
 - [ ] Open browser console
 - [ ] Try to approve a booking:
   ```javascript
@@ -129,61 +131,51 @@
   ```
 - [ ] **Expected**: Error - "Admin access required"
 
-### Test 13: Edge Function Blocks Non-Invited
-- [ ] In browser console or Postman, send:
-  ```bash
-  curl -X POST https://qkjcqtsacuspfdslgfxj.supabase.co/functions/v1/request-magic-link \
-    -H "Content-Type: application/json" \
-    -d '{"email": "notallowed@test.com"}'
-  ```
-- [ ] **Expected**: 403 response, no email sent
-
 ---
 
 ## ⚙️ Admin Functions
 
-### Test 14: Admin Can Invite Users
-- [ ] Admin → Invites tab
-- [ ] Click "+ Invite User"
-- [ ] Enter: `newuser@example.com`
-- [ ] Click "Send Invite"
-- [ ] **Expected**: Email appears in invites table
-
-### Test 15: Admin Can Edit Profiles
+### Test 13: Admin Can Edit Profiles
 - [ ] Admin → Profiles tab
-- [ ] Click "Edit" on a user
+- [ ] Click "Edit" on test user
 - [ ] Change name to "John Doe"
-- [ ] Change membership to "subscribed"
+- [ ] Change membership to "standard"
 - [ ] Save changes
-- [ ] **Expected**: Profile updated in database
+- [ ] **Expected**: Profile updated successfully
 
-### Test 16: Admin Can Update Settings
+### Test 14: Admin Can Update Settings
 - [ ] Admin → Settings tab
 - [ ] Change business hours to 08:00 - 18:00
+- [ ] Change buffer to 45 minutes
 - [ ] Save settings
-- [ ] **Expected**: Settings saved, new bookings use new hours
+- [ ] **Expected**: Settings saved, calendar reflects new hours
+
+### Test 15: Admin Can Remove User
+- [ ] Admin → Invites tab
+- [ ] Click "Remove" on a test user
+- [ ] Confirm removal
+- [ ] **Expected**: User removed from allowed_users
+- [ ] User can no longer log in
 
 ---
 
 ## 🎯 Edge Cases
 
-### Test 17: User Cancels Own Pending Booking
+### Test 16: User Cancels Own Pending Booking
 - [ ] User creates booking (pending status)
-- [ ] User clicks "Cancel" on their own booking
+- [ ] User goes to "My Bookings"
+- [ ] Clicks "Cancel" on pending booking
 - [ ] **Expected**: Status changes to "cancelled"
 
-### Test 18: User Cannot Cancel Approved Booking
+### Test 17: User Cannot Cancel Approved Booking
 - [ ] Admin approves a booking
-- [ ] User views their bookings
+- [ ] User views "My Bookings"
 - [ ] **Expected**: NO "Cancel" button for approved bookings
 
-### Test 19: User Cannot Navigate to Past Weeks
+### Test 18: User Cannot Navigate to Past Weeks
 - [ ] As regular user, try clicking "Previous Week"
 - [ ] **Expected**: Toast - "Cannot view past weeks"
-
-### Test 20: Admin Can View Past Bookings
-- [ ] As admin, go to Bookings tab
-- [ ] **Expected**: See all bookings (past and future)
+- [ ] Calendar stays on current/future weeks
 
 ---
 
@@ -192,25 +184,19 @@
 All tests should pass before going to production:
 
 - ✅ Non-invited users cannot log in
-- ✅ Invited users can log in via magic link
+- ✅ Invited users can log in with password
+- ✅ First-time users must change password
 - ✅ Admins have full dashboard access
 - ✅ Non-admins cannot access admin functions
 - ✅ Server validates all booking rules
 - ✅ RLS policies prevent unauthorized data access
-- ✅ Edge Function enforces invite-only access
-- ✅ No secrets exposed in client-side code
+- ✅ Password requirements enforced
 
 ---
 
-## 📝 Notes
+## 📝 Useful Commands
 
-**Your Project:**
-- Project ID: `qkjcqtsacuspfdslgfxj`
-- Project URL: `https://qkjcqtsacuspfdslgfxj.supabase.co`
-- Dashboard: https://supabase.com/dashboard/project/qkjcqtsacuspfdslgfxj
-- Edge Function: ✅ Deployed
-
-**Useful SQL Queries:**
+**SQL Queries:**
 
 ```sql
 -- Check allowed users
@@ -232,8 +218,7 @@ SELECT id, email, created_at FROM auth.users;
 DELETE FROM bookings WHERE id = 'booking-uuid';
 
 -- Reset test data
-DELETE FROM bookings;
-DELETE FROM profiles WHERE email LIKE '%test%';
+DELETE FROM bookings WHERE user_notes LIKE '%test%';
 ```
 
 ---

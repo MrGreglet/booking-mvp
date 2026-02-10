@@ -138,8 +138,29 @@ function closeSlidein() {
   setTimeout(() => { panel.innerHTML = ''; }, 400);
 }
 
+// Format date as "Mon, Feb 5"
+function formatDateShort(date) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
+}
+
+// Get day name (Mon, Tue, etc.)
+function getDayName(date) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return days[date.getDay()];
+}
+
+// Check if two dates are the same day
+function isSameDay(date1, date2) {
+  return date1.getFullYear() === date2.getFullYear() &&
+         date1.getMonth() === date2.getMonth() &&
+         date1.getDate() === date2.getDate();
+}
+
 // --- Export ---
 window.utils = {
-  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
+  formatTimeHM, formatDateYMD, formatDateWeekday, formatDateShort, getDayName, isSameDay,
+  getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
   simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein
 };

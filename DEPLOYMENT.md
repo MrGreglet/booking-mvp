@@ -1,17 +1,16 @@
 # Studio94 Booking System - Deployment Guide
 
-## Complete setup guide for invite-only magic link auth system
+## Complete setup guide for invite-only password-based auth system
 
 ---
 
 ## Overview
 
 This system uses:
-- **Supabase Auth** for passwordless magic link login
-- **Invite-only access** via allowlist
+- **Supabase Auth** for password authentication
+- **Invite-only access** via user creation
 - **Row Level Security (RLS)** for data protection
 - **Server-side validation** via Postgres functions
-- **Edge Functions** for secure magic link delivery
 
 ---
 
@@ -19,7 +18,6 @@ This system uses:
 
 1. **Supabase Account** (free tier is sufficient)
 2. **GitHub Account** (for GitHub Pages hosting)
-3. **Supabase CLI** (optional but recommended)
 
 ---
 
@@ -34,7 +32,7 @@ This system uses:
 5. Click **Run**
 
 This will create:
-- ✅ `allowed_users` table (invite allowlist)
+- ✅ `allowed_users` table (user allowlist)
 - ✅ `admin_users` table (admin privileges)
 - ✅ `profiles` table (user data)
 - ✅ `bookings` table (with auth integration)
@@ -46,25 +44,18 @@ This will create:
 
 1. Go to **Authentication** → **Providers**
 2. Enable **Email** provider
-3. **Disable** "Confirm email" (we're controlling access via invite list)
-4. Go to **Authentication** → **Email Templates**
-5. Customize the "Magic Link" email template (optional):
-   ```
-   Subject: Your Studio94 Login Link
-
-   Hello,
-
-   Click the link below to log in to Studio94:
-   {{ .ConfirmationURL }}
-
-   This link expires in 1 hour.
-   ```
+3. **Disable** "Confirm email" (we're controlling access via user creation)
+4. **Enable** "Auto Confirm" for new users
 
 ### Step 3: Create Your Admin Account
 
-1. First, you need to **sign in** with your email to create your account:
-   - Option A: Use the public site to request a magic link (will fail, but creates account)
-   - Option B: Use Supabase Dashboard → Authentication → Add User (manual)
+1. **Create admin user in Supabase Dashboard**:
+   - Go to **Authentication** → **Users**
+   - Click **Add User**
+   - Enter your email address
+   - Create a strong password
+   - Enable **Auto Confirm User**
+   - Click **Create User**
 
 2. **Find your User ID**:
    ```sql
@@ -91,134 +82,68 @@ This will create:
 
 ---
 
-## Part 2: Edge Function Setup
+## Part 2: Frontend Configuration
 
-### Step 4: Install Supabase CLI (if not installed)
-
-```bash
-# macOS / Linux
-brew install supabase/tap/supabase
-
-# Windows
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-scoop install supabase
-```
-
-### Step 5: Link Your Project
-
-```bash
-cd booking-mvp
-supabase login
-supabase link --project-ref qkjcqtsacuspfdslgfxj
-```
-
-### Step 6: Deploy Edge Function
-
-```bash
-supabase functions deploy request-magic-link
-```
-
-### Step 7: Set Edge Function Secrets
-
-```bash
-# Set the service role key (CRITICAL - keep this secret!)
-supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
-
-# Set the magic link redirect URL
-supabase secrets set MAGIC_LINK_REDIRECT_URL=https://mrgreglet.github.io/booking-mvp/
-```
-
-**Where to find Service Role Key:**
-1. Supabase Dashboard → Settings → API
-2. Under "Project API keys" → **service_role** (secret)
-3. ⚠️ **NEVER commit this key to GitHub!**
-
-### Step 8: Test Edge Function
-
-```bash
-# Test locally first (optional)
-supabase functions serve request-magic-link
-
-# Test deployed function
-curl -X POST https://qkjcqtsacuspfdslgfxj.supabase.co/functions/v1/request-magic-link \
-  -H "Content-Type: application/json" \
-  -d '{"email": "your-email@example.com"}'
-```
-
-Expected response (if invited):
-```json
-{
-  "success": true,
-  "message": "Check your email for the login link!"
-}
-```
-
-Expected response (if NOT invited):
-```json
-{
-  "error": "If your email is registered, you will receive a login link shortly."
-}
-```
-
----
-
-## Part 3: Frontend Configuration
-
-### Step 9: Update Supabase Config
+### Step 4: Update Supabase Config
 
 File: `assets/js/supabase-config.js`
 
-Already configured with:
+**IMPORTANT**: Replace the placeholder values with your own Supabase project credentials!
+
 ```javascript
-const SUPABASE_URL = 'https://qkjcqtsacuspfdslgfxj.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGc...'; // Already set
+const SUPABASE_URL = 'https://your-project-ref.supabase.co';
+const SUPABASE_ANON_KEY = 'your-anon-key-here';
 ```
 
-✅ No changes needed (already using your project).
+**Where to find these values:**
+1. Supabase Dashboard → Settings → API
+2. **Project URL** → Copy the URL
+3. **anon / public key** → Copy the anon key (this is safe to expose)
+
+⚠️ **NEVER use the service_role key in frontend code!**
 
 ---
 
-## Part 4: GitHub Pages Deployment
+## Part 3: GitHub Pages Deployment
 
-### Step 10: Update .gitignore
+### Step 5: Update .gitignore
 
 Ensure these are NOT committed:
 ```
 .env
 .env.local
-supabase/.env
 **/service-role-key*
+.secrets
 ```
 
-### Step 11: Commit and Push
+### Step 6: Commit and Push
 
 ```bash
 git add .
-git commit -m "Implement invite-only magic link auth system"
+git commit -m "Deploy password-based booking system"
 git push origin main
 ```
 
-### Step 12: Enable GitHub Pages
+### Step 7: Enable GitHub Pages
 
-1. Go to your repository: `https://github.com/MrGreglet/booking-mvp`
+1. Go to your GitHub repository
 2. Settings → Pages
 3. Source: **main** branch
 4. Folder: **/ (root)**
 5. Click **Save**
 
-Site will be live at: `https://mrgreglet.github.io/booking-mvp/`
+Site will be live at: `https://your-username.github.io/your-repo-name/`
 
 ---
 
-## Part 5: Testing & Verification
+## Part 4: Testing & Verification
 
 ### Test 1: Admin Login
 
-1. Go to `https://mrgreglet.github.io/booking-mvp/admin.html`
-2. Enter your admin email
-3. Click "Send Login Link"
-4. Check your email → click link
-5. Should see admin dashboard with 4 tabs:
+1. Go to `https://your-site.com/admin.html`
+2. Enter your admin email and password
+3. Click "Login"
+4. Should see admin dashboard with 4 tabs:
    - Invites
    - Profiles
    - Bookings
@@ -227,42 +152,43 @@ Site will be live at: `https://mrgreglet.github.io/booking-mvp/`
 ✅ **PASS**: Dashboard loads and you can see all tabs
 ❌ **FAIL**: If you see "Admin Access Required" → check admin_users table
 
-### Test 2: Invite Non-Admin User
+### Test 2: Create New User
 
 1. In admin dashboard → **Invites** tab
 2. Click "+ Invite User"
 3. Enter test email (e.g., `test@example.com`)
-4. Click "Send Invite"
-5. Check `allowed_users` table in Supabase:
+4. Click "Create User"
+5. Copy the temporary password shown in the dialog
+6. Check `allowed_users` table in Supabase:
    ```sql
    SELECT * FROM allowed_users WHERE email = 'test@example.com';
    ```
 
-✅ **PASS**: Email appears in table
-❌ **FAIL**: Check admin status and Edge Function logs
+✅ **PASS**: Email appears in table and user exists in auth.users
+❌ **FAIL**: Check admin status and Supabase logs
 
 ### Test 3: User Login (Invited Email)
 
-1. Open public site: `https://mrgreglet.github.io/booking-mvp/`
-2. Enter the invited email (`test@example.com`)
-3. Click "Send Login Link"
-4. Should see success message: "Check your email!"
-5. User receives email → clicks link
+1. Open public site: `https://your-site.com/`
+2. Enter the created email and temporary password
+3. Click "Login"
+4. Should be prompted to change password
+5. Set new password
 6. Should see calendar with login confirmation
 
-✅ **PASS**: User can log in and see calendar
-❌ **FAIL**: Check allowed_users and Edge Function logs
+✅ **PASS**: User can log in and change password
+❌ **FAIL**: Check allowed_users table and auth.users
 
 ### Test 4: User Login (NON-Invited Email)
 
 1. Open public site
 2. Enter random email (e.g., `hacker@evil.com`)
-3. Click "Send Login Link"
-4. Should see generic message (not revealing if invited or not)
-5. NO email should be sent
+3. Enter any password
+4. Click "Login"
+5. Should see error: "Invalid email or password"
 
-✅ **PASS**: Generic message shown, no email sent
-❌ **FAIL**: If email sent → check Edge Function code
+✅ **PASS**: Login rejected
+❌ **FAIL**: If user can log in without being created → check RLS policies
 
 ### Test 5: Create Booking (Rules Enforcement)
 
@@ -319,7 +245,7 @@ Site will be live at: `https://mrgreglet.github.io/booking-mvp/`
 
 1. Log in on PC
 2. Create booking
-3. Log in on mobile (same email)
+3. Log in on mobile (same email and password)
 4. Should see booking immediately
 
 ✅ **PASS**: Data syncs via Supabase
@@ -328,8 +254,12 @@ Site will be live at: `https://mrgreglet.github.io/booking-mvp/`
 
 ## Troubleshooting
 
-### Issue: "Not authenticated" error
-**Solution**: Check Supabase Auth → Users to verify account exists
+### Issue: "Invalid login credentials"
+**Solution**: 
+1. Verify user exists: Supabase → Authentication → Users
+2. Check if email is in allowed_users table
+3. Ensure password is correct
+4. Try resetting password via Supabase dashboard
 
 ### Issue: "Admin access required" after login
 **Solution**: 
@@ -341,14 +271,13 @@ SELECT * FROM admin_users WHERE user_id = 'your-user-id';
 INSERT INTO admin_users (user_id) VALUES ('your-user-id');
 ```
 
-### Issue: Magic link email not sent
+### Issue: User can't log in
 **Solution**:
-1. Check Edge Function logs: Supabase → Edge Functions → Logs
-2. Verify secrets are set: `supabase secrets list`
-3. Check email in allowed_users table
-4. Verify Email provider is enabled in Auth settings
+1. Admin must create user via Invites tab
+2. Check auth.users table for user account
+3. Verify email is in allowed_users table
 
-### Issue: "Email not invited" error
+### Issue: "Email not invited" error during booking
 **Solution**:
 ```sql
 -- Check if email is in allowlist
@@ -368,49 +297,62 @@ SELECT * FROM pg_policies WHERE tablename IN ('bookings', 'profiles', 'allowed_u
 SELECT auth.uid(); -- Should return your user_id, not NULL
 ```
 
-### Issue: Edge Function returns 403 for invited user
+### Issue: First-time password change not working
 **Solution**:
-1. Check Edge Function logs for errors
-2. Verify `SUPABASE_SERVICE_ROLE_KEY` secret is set correctly
-3. Test SQL query directly:
-   ```sql
-   SELECT * FROM allowed_users WHERE email = 'test@example.com';
-   ```
+1. Check browser console for errors
+2. Verify password meets minimum requirements (8 characters)
+3. Check Supabase logs for auth errors
 
 ---
 
 ## Security Checklist
 
-- ✅ Service role key stored as secret (not in code)
 - ✅ RLS enabled on all tables
-- ✅ Email confirmation disabled (access controlled by invite list)
+- ✅ Email confirmation disabled (access controlled by admin)
+- ✅ Auto-confirm enabled for new users
 - ✅ Booking validation on server (RPC functions)
-- ✅ Edge Function checks allowlist before sending magic links
 - ✅ Admin status checked via database (not client-side)
 - ✅ All destructive actions require admin privileges
+- ✅ Passwords stored securely (bcrypt via Supabase Auth)
+- ✅ First-login password change enforced
 
 ---
 
 ## Next Steps
 
-1. **Customize email templates**: Supabase → Authentication → Email Templates
+1. **Customize branding**: Update colors and logo in CSS
 2. **Set up custom domain**: Configure CNAME for GitHub Pages
 3. **Monitor usage**: Supabase → Logs & Analytics
 4. **Backup database**: Set up daily backups in Supabase settings
-5. **Rate limiting**: Consider adding rate limits to Edge Function
+5. **Configure email templates**: Supabase → Authentication → Email Templates
 
 ---
 
 ## Support
 
 If you encounter issues:
-1. Check Supabase Logs: Dashboard → Logs → Postgres / Edge Functions
+1. Check Supabase Logs: Dashboard → Logs → Postgres
 2. Check browser console for JavaScript errors
 3. Verify auth state: `window.storage.getCurrentUser()`
 4. Test RPC functions directly in SQL Editor
 
 ---
 
+## Creating Additional Users
+
+As an admin, you can create new users:
+
+1. Go to admin dashboard (`/admin.html`)
+2. Navigate to **Invites** tab
+3. Click **+ Invite User**
+4. Enter user's email address
+5. Click **Create User**
+6. **IMPORTANT**: Copy the temporary password displayed
+7. Send credentials to the user via secure channel
+8. User must change password on first login
+
+---
+
 **Deployment Complete! 🚀**
 
-Your invite-only booking system is now live with enterprise-grade security.
+Your invite-only booking system is now live with secure password authentication.

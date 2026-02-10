@@ -1,6 +1,6 @@
 // ============================================================
 // STORAGE.JS - Supabase Auth + RPC Backend Layer
-// Invite-only magic link auth with server-enforced security
+// Password-based authentication with server-enforced security
 // ============================================================
 
 (function() {
@@ -8,10 +8,10 @@
 
 const db = window.supabaseClient;
 
-// Default settings
+// Default settings (6 AM to midnight)
 const DEFAULT_SETTINGS = {
-  openTime: '09:00',
-  closeTime: '17:00',
+  openTime: '06:00',
+  closeTime: '24:00',
   bufferMinutes: 30,
   slotIntervalMinutes: 60
 };
@@ -115,36 +115,31 @@ async function signOut() {
   cachedAllowedUsers = null;
 }
 
-// Magic link request via Edge Function (DEPRECATED - keeping for backwards compatibility)
-async function requestMagicLink(email) {
-  // Use Supabase client's built-in functions.invoke method
-  try {
-    const { data, error } = await db.functions.invoke('request-magic-link', {
-      body: { email }
-    });
-    
-    if (error) {
-      throw new Error(error.message || 'Failed to send magic link');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error requesting magic link:', error);
-    throw error;
-  }
-}
+// Password authentication functions below
 
 // Password authentication
 async function signInWithPassword(email, password) {
+  console.log('signInWithPassword called for:', email);
+  
   const { data, error } = await db.auth.signInWithPassword({
     email: email.trim().toLowerCase(),
     password: password
   });
   
   if (error) {
-    throw new Error(error.message || 'Login failed');
+    console.error('Supabase auth error:', error);
+    
+    // Provide helpful error messages
+    if (error.message.includes('Invalid login credentials')) {
+      throw new Error('Invalid email or password. Check your credentials and try again.');
+    } else if (error.message.includes('Email not confirmed')) {
+      throw new Error('Email not confirmed. Please check your inbox.');
+    } else {
+      throw new Error(error.message || 'Login failed');
+    }
   }
   
+  console.log('Login successful!');
   currentSession = data.session;
   currentUser = data.user;
   await checkAdminStatus();
@@ -637,7 +632,6 @@ window.storage = {
   getCurrentSession,
   getIsAdmin,
   signOut,
-  requestMagicLink, // deprecated
   signInWithPassword,
   changePassword,
   needsPasswordChange,

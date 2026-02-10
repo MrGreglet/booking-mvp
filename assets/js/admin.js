@@ -7,7 +7,8 @@
 'use strict';
 
 const {
-  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes,
+  formatTimeHM, formatDateYMD, formatDateWeekday, formatDateShort, getDayName, isSameDay,
+  getISOWeek, getWeekStart, addDays, addMinutes,
   showToast, openSlidein, closeSlidein
 } = window.utils;
 
@@ -16,7 +17,6 @@ const storage = window.storage;
 let currentUser = null;
 let isAdmin = false;
 let currentPanel = 'invites';
-let isCheckingMagicLink = false;
 
 // ============================================================
 // AUTHENTICATION
@@ -61,23 +61,31 @@ async function handleAdminLogin(e) {
   statusEl.textContent = '';
   errorEl.textContent = '';
   
+  console.log('Attempting login for:', email);
+  
   try {
-    await storage.signInWithPassword(email, password);
+    const result = await storage.signInWithPassword(email, password);
+    console.log('Login successful, user:', result.user.email);
     
     // Wait for auth state to update
     await new Promise(r => setTimeout(r, 500));
     
     // Check if admin
+    console.log('Checking admin access...');
     const hasAccess = await checkAdminAccess();
+    console.log('Admin access:', hasAccess);
     
     if (!hasAccess) {
-      throw new Error('Admin access required');
+      await storage.signOut();
+      throw new Error('Admin access required - this email is not in the admin_users table');
     }
     
     // Success - initialize dashboard
+    console.log('Initializing admin dashboard...');
     await init();
     
   } catch (error) {
+    console.error('Login error:', error);
     errorEl.textContent = error.message || 'Login failed';
     emailInput.disabled = false;
     passwordInput.disabled = false;
@@ -91,20 +99,6 @@ async function handleLogout() {
   location.reload();
 }
 
-async function checkMagicLinkRedirect() {
-  if (isCheckingMagicLink) return;
-  isCheckingMagicLink = true;
-  
-  const hashParams = new URLSearchParams(window.location.hash.substring(1));
-  const accessToken = hashParams.get('access_token');
-  
-  if (accessToken) {
-    showToast('Logging in...');
-    window.history.replaceState(null, '', window.location.pathname);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    await init();
-  }
-}
 
 // ============================================================
 // PANEL NAVIGATION
@@ -151,8 +145,15 @@ function renderInvitesPanel() {
   let html = `
     <div class="panel-header">
       <h2>Invited Users</h2>
-      <button class="primary" id="invite-user-btn">+ Invite User</button>
     </div>
+    <form id="invite-form-inline" class="admin-inline-form">
+      <div class="form-group">
+        <label for="invite-email-inline">Email Address</label>
+        <input type="email" id="invite-email-inline" placeholder="user@example.com" required autocomplete="email">
+      </div>
+      <p class="form-hint">A temporary password will be generated. The user must change it on first login.</p>
+      <button type="submit" class="primary">Create User</button>
+    </form>
   `;
   
   if (allowedUsers.length === 0) {
@@ -189,9 +190,9 @@ function renderInvitesPanel() {
   panel.innerHTML = html;
   
   // Bind events
-  const inviteBtn = document.getElementById('invite-user-btn');
-  if (inviteBtn) {
-    inviteBtn.onclick = openInviteForm;
+  const inviteForm = document.getElementById('invite-form-inline');
+  if (inviteForm) {
+    inviteForm.onsubmit = handleInviteUserInline;
   }
   
   document.querySelectorAll('.remove-invite-btn').forEach(btn => {
@@ -199,38 +200,18 @@ function renderInvitesPanel() {
   });
 }
 
-function openInviteForm() {
-  let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2>Invite User</h2>`;
-  html += `<form id="invite-form">
-    <div class="form-group">
-      <label for="invite-email">Email Address</label>
-      <input type="email" id="invite-email" placeholder="user@example.com" required autocomplete="email">
-    </div>
-    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 1rem 0;">
-      A temporary password will be generated for the user. They must change it on first login.
-    </p>
-    <div class="form-actions">
-      <button type="submit" class="primary">Create User</button>
-      <button type="button" class="secondary cancel-btn">Cancel</button>
-    </div>
-  </form>`;
-  
-  openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.querySelector('.cancel-btn').onclick = closeSlidein;
-  document.getElementById('invite-form').onsubmit = handleInviteUser;
-}
-
-async function handleInviteUser(e) {
+async function handleInviteUserInline(e) {
   e.preventDefault();
   
-  const emailInput = document.getElementById('invite-email');
-  const submitBtn = e.target.querySelector('button[type="submit"]');
+  const emailInput = document.getElementById('invite-email-inline');
+  const form = document.getElementById('invite-form-inline');
+  const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
   const email = emailInput.value.trim().toLowerCase();
   
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Creating...';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+  }
   
   try {
     // Generate temporary password
@@ -262,11 +243,14 @@ async function handleInviteUser(e) {
     // Show success with credentials (ignore rate limit errors)
     showCredentialsDialog(email, tempPassword);
     renderInvitesPanel();
+    if (emailInput) emailInput.value = '';
     
   } catch (error) {
     showToast(error.message || 'Failed to create user', 'error');
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Create User';
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create User';
+    }
   }
 }
 
@@ -583,6 +567,18 @@ function renderBookingsPanel() {
   
   panel.innerHTML = html;
   
+  // If we have bookings, ensure calendar shows the week of the first upcoming one
+  const upcomingBookings = bookings.filter(b => new Date(b.startISO) >= new Date());
+  if (upcomingBookings.length > 0) {
+    const firstBookingStart = new Date(upcomingBookings[0].startISO);
+    const bookingWeekStart = getWeekStart(firstBookingStart);
+    // Only switch week if current view doesn't include this booking
+    const weekEnd = new Date(adminCurrentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+    if (firstBookingStart < adminCurrentWeekStart || firstBookingStart > weekEnd) {
+      adminCurrentWeekStart = bookingWeekStart;
+    }
+  }
+  
   // Render calendar
   renderAdminCalendar();
   
@@ -651,10 +647,12 @@ function renderAdminCalendar() {
   }
   html += '</div>';
   
-  // Time rows
-  const startHour = parseInt(settings.business_hours_start.split(':')[0]);
-  const endHour = parseInt(settings.business_hours_end.split(':')[0]);
-  const slotMinutes = settings.slot_interval_minutes;
+  // Time rows (settings use openTime/closeTime, not business_hours_start/end)
+  const startHour = parseInt(settings.openTime.split(':')[0]);
+  let endHour = parseInt(settings.closeTime.split(':')[0]);
+  // Handle midnight (00:00) as 24
+  if (endHour === 0) endHour = 24;
+  const slotMinutes = settings.slotIntervalMinutes;
   
   for (let hour = startHour; hour < endHour; hour++) {
     for (let minute = 0; minute < 60; minute += slotMinutes) {
@@ -669,10 +667,18 @@ function renderAdminCalendar() {
         slotDate.setHours(hour, minute, 0, 0);
         
         const slotISO = slotDate.toISOString();
+        const slotTime = slotDate.getTime();
         const isPast = slotDate < new Date();
         
-        // Check if there's a booking at this slot
-        const booking = bookings.find(b => b.startISO === slotISO);
+        // Check if there's a booking at this slot - compare using timestamps (handles timezones)
+        const booking = bookings.find(b => {
+          const start = new Date(b.startISO);
+          const end = new Date(b.endISO);
+          const startTime = start.getTime();
+          const endTime = end.getTime();
+          // Slot falls within booking if slotTime is >= start and < end
+          return slotTime >= startTime && slotTime < endTime;
+        });
         
         let slotClass = 'slot-cell';
         if (isPast) slotClass += ' past';
@@ -887,7 +893,18 @@ function renderSettingsPanel() {
       </div>
       <div class="form-group">
         <label for="close-time">Business Hours End</label>
-        <input type="time" id="close-time" value="${settings.closeTime}" required>
+        <select id="close-time" required>
+          ${(() => {
+            const hours = [];
+            for (let h = 6; h <= 24; h++) {
+              const t = h === 24 ? '24:00' : `${String(h).padStart(2, '0')}:00`;
+              hours.push(t);
+            }
+            return hours.map(t => 
+              `<option value="${t}" ${settings.closeTime === t ? 'selected' : ''}>${t === '24:00' ? '24:00 (midnight)' : t}</option>`
+            ).join('');
+          })()}
+        </select>
       </div>
       <div class="form-group">
         <label for="buffer-minutes">Buffer Between Bookings (minutes)</label>
@@ -976,7 +993,6 @@ async function init() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', async () => {
-  await checkMagicLinkRedirect();
   await init();
 });
 

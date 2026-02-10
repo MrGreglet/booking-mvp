@@ -48,6 +48,34 @@ html {
   background: var(--bg-page);
 }
 
+/* Loading overlay (shown until init completes) */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--bg-page);
+  z-index: 9999;
+}
+.loading-overlay p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-glass);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 body {
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   color: var(--text-main);
@@ -195,6 +223,71 @@ body.admin-bg {
 .user-bar > span {
   font-size: 0.95rem;
   color: var(--text-muted);
+}
+
+/* Full-screen login page (shown when not logged in) */
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  background: var(--bg-page);
+}
+
+.login-page-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  max-width: 360px;
+  width: 100%;
+  padding: 2.5rem;
+  background: var(--bg-glass);
+  backdrop-filter: blur(var(--glass-blur));
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-glass);
+}
+
+.login-page-content .logo {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.login-page-content h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.login-form-centered {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 1rem;
+}
+
+.login-form-centered input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+.login-form-centered button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+
+.login-status {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+  min-height: 1.5rem;
 }
 
 .user-bar .user-type {
@@ -1295,6 +1388,75 @@ body.admin-bg {
   padding: 1.2rem 1.2rem 1.5rem;
   margin-bottom: 2rem;
   border: 1px solid var(--border-glass);
+}
+
+/* Admin panel inline forms (matches Settings, Invites) */
+.admin-inline-form,
+.admin-panel .settings-form {
+  margin-bottom: 2rem;
+}
+.admin-inline-form .form-group,
+.admin-panel .settings-form .form-group {
+  margin-bottom: 1rem;
+}
+.admin-inline-form label,
+.admin-panel .settings-form label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.admin-inline-form input,
+.admin-inline-form select,
+.admin-panel .settings-form input,
+.admin-panel .settings-form select {
+  width: 100%;
+  max-width: 320px;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-glass);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 1rem;
+}
+.admin-inline-form input:focus,
+.admin-inline-form select:focus,
+.admin-panel .settings-form input:focus,
+.admin-panel .settings-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-input-focus);
+}
+.admin-inline-form .form-hint,
+.admin-panel .form-hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0.5rem 0 1rem 0;
+}
+.admin-inline-form button[type="submit"],
+.admin-panel .settings-form button[type="submit"] {
+  padding: 0.65rem 1.25rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--accent);
+  color: #232526;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.admin-inline-form button[type="submit"]:hover,
+.admin-panel .settings-form button[type="submit"]:hover {
+  background: var(--accent-hover);
+  color: #232526;
+}
+.admin-inline-form button[type="submit"]:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+.admin-inline-form + div,
+.admin-inline-form + .table {
+  margin-top: 1.5rem;
 }
 
 .table {
