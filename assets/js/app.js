@@ -178,11 +178,19 @@ async function handlePasswordLogin(e) {
   statusEl.textContent = '';
   
   try {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'before signIn',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion
     await storage.signInWithPassword(email, password);
-    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'after signIn success',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion
     // Success - will trigger auth state change
     showToast('Logged in successfully!');
     showAppView();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'before init',data:{},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
     await init();
   } catch (error) {
     const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';

@@ -20,6 +20,10 @@ CREATE POLICY "Users can check own admin status"
 -- ============================================================
 -- FIX ISSUE 2: Allow users to see approved bookings (availability)
 -- ============================================================
+-- Root cause: Without this policy, non-admins only see their own bookings
+-- (policy "Users can view own bookings"), so the calendar shows slots as free
+-- when another user has an approved booking. This policy fixes that.
+-- "My bookings" stays correct because the frontend filters by userId.
 
 -- Drop if exists (idempotent)
 DROP POLICY IF EXISTS "Users can view approved bookings for availability" ON bookings;
@@ -31,7 +35,7 @@ CREATE POLICY "Users can view approved bookings for availability"
   ON bookings FOR SELECT
   USING (status = 'approved' AND auth.uid() IS NOT NULL);
 
--- Note: The existing "Users can view own bookings" and "Admins can view all bookings" 
+-- Note: The existing "Users can view own bookings" and "Admins can view all bookings"
 -- policies remain in place and work together with this new policy.
 -- PostgreSQL RLS evaluates policies with OR logic, so a booking is visible if ANY policy allows it.
 

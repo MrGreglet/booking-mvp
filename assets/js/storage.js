@@ -26,18 +26,24 @@ let currentSession = null;
 let isAdmin = false;
 
 // Retry data fetch on AbortError (auth state change often aborts in-flight requests)
-async function fetchWithAbortRetry(fetchFn, retries = 2) {
+async function fetchWithAbortRetry(fetchFn, retries = 4) {
   for (let i = 0; i <= retries; i++) {
     try {
       const result = await fetchFn();
       const err = result?.error;
       const isAbort = err && (String(err.message || '').toLowerCase().includes('abort') || err.name === 'AbortError');
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:fetchWithAbortRetry',message:'attempt',data:{attempt:i,retries,hasError:!!err,isAbort:!!isAbort,lastAttempt:i===retries},timestamp:Date.now(),hypothesisId:'H3',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
       if (!err || (!isAbort || i === retries)) return result;
     } catch (e) {
       const isAbort = (e?.message || '').toLowerCase().includes('abort') || e?.name === 'AbortError';
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:fetchWithAbortRetry',message:'attempt threw',data:{attempt:i,retries,isAbort,lastAttempt:i===retries},timestamp:Date.now(),hypothesisId:'H3',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
       if (!isAbort || i === retries) throw e;
     }
-    await new Promise(r => setTimeout(r, 350 * (i + 1)));
+    await new Promise(r => setTimeout(r, 500 * (i + 1)));
   }
   return { data: null, error: { message: 'AbortError' } };
 }
@@ -47,14 +53,29 @@ async function fetchWithAbortRetry(fetchFn, retries = 2) {
 async function initAuth() {
   let session = null;
   let sessionError = null;
-
-  try {
-    const result = await db.auth.getSession();
-    session = result?.data?.session ?? null;
-    sessionError = result?.error ?? null;
-  } catch (error) {
-    console.warn('Auth getSession failed (network/abort):', error?.message || error);
-    return currentUser;
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'initAuth started',data:{},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+  // #endregion
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    try {
+      const result = await db.auth.getSession();
+      session = result?.data?.session ?? null;
+      sessionError = result?.error ?? null;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'getSession ok',data:{hasSession:!!session,attempt},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
+      break;
+    } catch (error) {
+      const isAbort = (error?.message || '').toLowerCase().includes('abort') || error?.name === 'AbortError';
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'getSession threw',data:{attempt,isAbort},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
+      if (!isAbort || attempt === 3) {
+        console.warn('Auth getSession failed (network/abort):', error?.message || error);
+        return currentUser;
+      }
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    }
   }
 
   if (sessionError) {
@@ -203,7 +224,9 @@ async function markPasswordChanged() {
 // Listen for auth state changes
 db.auth.onAuthStateChange(async (event, session) => {
   console.log('Auth state changed:', event);
-  
+  // #region agent log
+  if (event === 'SIGNED_IN') fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:onAuthStateChange',message:'Auth SIGNED_IN',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
   try {
     if (event === 'SIGNED_IN' && session) {
       currentSession = session;
@@ -585,10 +608,14 @@ function getAllowedUsers() {
 // ========== INITIALIZATION ==========
 
 async function loadAll() {
+  // #region agent log
+  var _loadAllRunId = Date.now();
+  fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:loadAll',message:'loadAll started',data:{runId:_loadAllRunId},timestamp:_loadAllRunId,runId:String(_loadAllRunId),hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
   try {
     await initAuth();
     // Brief delay so auth state change from getSession() can settle (reduces AbortErrors)
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 400));
     
     // Load settings (always - public data)
     try {

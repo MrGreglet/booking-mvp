@@ -67,9 +67,33 @@ async function handleAdminLogin(e) {
     // Sign in
     const result = await storage.signInWithPassword(email, password);
     
-    // Wait and reload all data to ensure admin status is checked
-    await new Promise(r => setTimeout(r, 500));
-    await storage.loadAll();
+    // Wait for auth state to settle
+    await new Promise(r => setTimeout(r, 800));
+    
+    // Load data without re-initializing auth
+    try {
+      await storage.loadSettings();
+    } catch (err) {
+      console.warn('Could not load settings');
+    }
+    
+    try {
+      await storage.loadBookings();
+    } catch (err) {
+      console.warn('Could not load bookings');
+    }
+    
+    try {
+      await storage.loadProfiles();
+    } catch (err) {
+      console.warn('Could not load profiles');
+    }
+    
+    try {
+      await storage.loadAllowedUsers();
+    } catch (err) {
+      console.warn('Could not load allowed users');
+    }
     
     // Check admin access (reads from storage state, doesn't update UI yet)
     const currentUser = storage.getCurrentUser();
