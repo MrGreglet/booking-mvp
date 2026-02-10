@@ -650,7 +650,7 @@ async function init() {
     const isRecovery = isRecoveryHash();
     
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Load timeout')), 15000)
+      setTimeout(() => reject(new Error('Load timeout')), 30000)
     );
     
     await Promise.race([storage.loadAll(), timeoutPromise]);
