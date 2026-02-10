@@ -565,12 +565,9 @@ function renderBookingsPanel() {
   document.getElementById('pending-badge').textContent = pendingCount;
   
   let html = `
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-      <div>
-        <h2>Bookings Calendar</h2>
-        <span class="info-text">${pendingCount} pending approval</span>
-      </div>
-      <button class="primary" id="admin-add-booking-btn">+ Add Booking</button>
+    <div class="panel-header">
+      <h2>Bookings Calendar</h2>
+      <span class="info-text">${pendingCount} pending approval</span>
     </div>
     
     <!-- Calendar Navigation -->
@@ -685,9 +682,6 @@ function renderBookingsPanel() {
     adminCurrentWeekStart = getWeekStart(new Date());
     renderAdminCalendar();
   };
-  
-  const addBookingBtn = document.getElementById('admin-add-booking-btn');
-  if (addBookingBtn) addBookingBtn.onclick = openCreateBookingForm;
   
   // Toggle past bookings button
   const togglePastBtn = document.getElementById('toggle-past-bookings-btn');
