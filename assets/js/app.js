@@ -72,15 +72,92 @@ function hideLoadingOverlay() {
 function showLoginView() {
   hideLoadingOverlay();
   document.getElementById('login-page').style.display = 'flex';
+  document.getElementById('reset-password-page').style.display = 'none';
   document.getElementById('app-view').style.display = 'none';
   const form = document.getElementById('login-form');
   if (form) form.onsubmit = handlePasswordLogin;
+  const forgotLink = document.getElementById('forgot-password-link');
+  if (forgotLink) forgotLink.onclick = handleForgotPasswordClick;
+}
+
+function showResetPasswordView() {
+  hideLoadingOverlay();
+  document.getElementById('login-page').style.display = 'none';
+  document.getElementById('reset-password-page').style.display = 'flex';
+  document.getElementById('app-view').style.display = 'none';
+  const form = document.getElementById('reset-password-form');
+  if (form) form.onsubmit = handleResetPasswordSubmit;
+  document.getElementById('reset-status').textContent = '';
+  document.getElementById('reset-new-password').value = '';
+  document.getElementById('reset-confirm-password').value = '';
+}
+
+function handleForgotPasswordClick(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email')?.value?.trim() || prompt('Enter your email to receive a password reset link:');
+  if (!email) return;
+  const btn = document.getElementById('login-submit-btn');
+  const statusEl = document.getElementById('login-status');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+  statusEl.textContent = '';
+  window.supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + (window.location.pathname || '/')
+  }).then(({ error }) => {
+    if (btn) { btn.disabled = false; btn.textContent = 'Login'; }
+    if (error) {
+      statusEl.innerHTML = `<div style="color: var(--danger); margin-top: 1rem;">${error.message}</div>`;
+    } else {
+      statusEl.innerHTML = `<div style="color: var(--success); margin-top: 1rem;">Check your email for the reset link.</div>`;
+    }
+  });
+}
+
+async function handleResetPasswordSubmit(e) {
+  e.preventDefault();
+  const newPw = document.getElementById('reset-new-password').value;
+  const confirmPw = document.getElementById('reset-confirm-password').value;
+  const statusEl = document.getElementById('reset-status');
+  const submitBtn = document.getElementById('reset-submit-btn');
+  if (newPw.length < 8) {
+    statusEl.textContent = 'Password must be at least 8 characters';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  if (newPw !== confirmPw) {
+    statusEl.textContent = 'Passwords do not match';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Setting...';
+  statusEl.textContent = '';
+  statusEl.style.color = '';
+  try {
+    await storage.changePassword(newPw);
+    await storage.signOut();
+    statusEl.textContent = 'Password updated. You can now log in.';
+    statusEl.style.color = 'var(--success)';
+    if (window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', window.location.pathname || '/');
+    }
+    setTimeout(() => {
+      currentUser = null;
+      showLoginView();
+      showToast('Password set. You can now log in.');
+    }, 2000);
+  } catch (err) {
+    statusEl.textContent = err.message || 'Failed to set password';
+    statusEl.style.color = 'var(--danger)';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Set password';
+  }
 }
 
 function showAppView() {
   hideLoadingOverlay();
   document.getElementById('app-view').style.display = 'block';
   document.getElementById('login-page').style.display = 'none';
+  document.getElementById('reset-password-page').style.display = 'none';
 }
 
 async function handlePasswordLogin(e) {
@@ -563,30 +640,43 @@ function bindWeekNav() {
 // INITIALIZATION
 // ============================================================
 
+function isRecoveryHash() {
+  const hash = window.location.hash;
+  if (!hash || hash.length < 2) return false;
+  const params = new URLSearchParams(hash.substring(1));
+  return params.get('type') === 'recovery';
+}
+
 async function init() {
   try {
-    // Load all data (initializes auth)
+    const isRecovery = isRecoveryHash();
     await storage.loadAll();
-    
-    // Get current user
     currentUser = storage.getCurrentUser();
-    
-    // Show login page or app view
+
+    if (isRecovery) {
+      if (currentUser) {
+        showResetPasswordView();
+      } else {
+        showLoginView();
+        showToast('Reset link expired or invalid. Request a new one.', 'error');
+      }
+      return;
+    }
+
     if (!currentUser) {
       showLoginView();
       return;
     }
-    
+
     showAppView();
     renderUserBar();
     updateWeekLabel();
     renderCalendar();
     bindWeekNav();
-    
     showToast(`Welcome back, ${currentUser.email.split('@')[0]}!`);
   } catch (error) {
     console.error('Initialization error:', error);
-    showLoginView(); // Show login on error so user can retry
+    showLoginView();
     showToast('Failed to load application', 'error');
   }
 }

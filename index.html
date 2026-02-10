@@ -24,7 +24,22 @@
         <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
         <button type="submit" id="login-submit-btn">Login</button>
       </form>
+      <a href="#" id="forgot-password-link" class="forgot-password-link">Forgot password?</a>
       <span id="login-status" class="login-status"></span>
+    </div>
+  </div>
+
+  <!-- Reset password panel (shown only when type=recovery in URL hash) -->
+  <div id="reset-password-page" class="login-page" style="display: none;">
+    <div class="login-page-content">
+      <div class="logo">Studio94</div>
+      <h1>Set new password</h1>
+      <form id="reset-password-form" class="login-form login-form-centered">
+        <input type="password" id="reset-new-password" placeholder="New password" required minlength="8" autocomplete="new-password">
+        <input type="password" id="reset-confirm-password" placeholder="Confirm password" required minlength="8" autocomplete="new-password">
+        <button type="submit" id="reset-submit-btn">Set password</button>
+      </form>
+      <span id="reset-status" class="login-status"></span>
     </div>
   </div>
 
