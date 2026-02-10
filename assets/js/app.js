@@ -434,13 +434,20 @@ function renderCalendar() {
       if (isPast) {
         slotClass = 'slot-cell past';
       } else {
-        // Find any booking in this slot (including declined)
-        const booking = bookings.find(b => {
+        // Find all bookings in this slot (including declined)
+        const slotBookings = bookings.filter(b => {
           if (b.status === 'cancelled') return false; // Skip cancelled
           const start = new Date(b.startISO);
           const end = new Date(b.endISO);
           return slotDate >= start && slotDate < end;
         });
+        
+        // Prioritize current user's booking if they have one
+        let booking = slotBookings.find(b => b.userId === currentUser.id);
+        if (!booking) {
+          // If no user booking, show any other booking
+          booking = slotBookings.find(b => b.status !== 'declined');
+        }
         
         if (booking) {
           const isMyBooking = booking.userId === currentUser.id;
