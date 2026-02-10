@@ -640,13 +640,24 @@ body.admin-bg {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* Booked/Approved: green tint */
+/* Booked/Approved by others: gray with X (blocked slot) */
 .calendar-grid .slot-cell.booked,
 .admin-calendar-grid .slot-cell.booked {
-  background: rgba(34, 197, 94, 0.25);
+  background: rgba(128, 128, 128, 0.25);
   color: var(--text-main);
   cursor: not-allowed;
   position: relative;
+}
+
+.calendar-grid .slot-cell.booked::after {
+  content: '✗';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.2rem;
+  color: rgba(128, 128, 128, 0.8);
+  font-weight: bold;
 }
 
 /* Admin calendar: booked slots are clickable */
@@ -655,8 +666,8 @@ body.admin-bg {
 }
 
 .admin-calendar-grid .slot-cell.booked:hover {
-  background: rgba(34, 197, 94, 0.35);
-  outline: 2px solid rgba(34, 197, 94, 0.8);
+  background: rgba(128, 128, 128, 0.35);
+  outline: 2px solid rgba(128, 128, 128, 0.8);
   outline-offset: -2px;
   z-index: 3;
 }
@@ -678,16 +689,7 @@ body.admin-bg {
   z-index: 2 !important;
 }
 
-.calendar-grid .slot-cell.booked::after {
-  content: '✓';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 1.5rem;
-  color: #22c55e;
-  opacity: 0.8;
-}
+/* Removed duplicate - X icon for booked slots is defined above */
 
 .calendar-grid .slot-cell.booked:hover {
   background: rgba(34, 197, 94, 0.3);
