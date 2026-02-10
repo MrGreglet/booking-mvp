@@ -78,9 +78,18 @@ async function handleAdminLogin(e) {
       throw new Error('Admin access required - this email is not in the admin_users table');
     }
     
-    document.getElementById('admin-login').style.display = 'none';
-    document.getElementById('admin-app').style.display = 'block';
-    await init();
+    const loginPanel = document.getElementById('admin-login');
+    const appPanel = document.getElementById('admin-app');
+    if (loginPanel) loginPanel.style.display = 'none';
+    if (appPanel) appPanel.style.display = 'block';
+    
+    await storage.loadAll();
+    
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.onclick = () => switchPanel(btn.getAttribute('data-panel'));
+    });
+    document.getElementById('logout-btn').onclick = handleLogout;
+    switchPanel('invites');
     
   } catch (error) {
     const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';

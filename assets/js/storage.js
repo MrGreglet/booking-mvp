@@ -128,40 +128,26 @@ async function signOut() {
 
 // Password authentication
 async function signInWithPassword(email, password) {
-  const opts = { email: email.trim().toLowerCase(), password };
-
-  async function doSignIn() {
-    const { data, error } = await db.auth.signInWithPassword(opts);
-    if (error) {
-      const msg = error.message || '';
-      if (msg.includes('Invalid login credentials')) {
-        throw new Error('Invalid email or password. Check your credentials and try again.');
-      }
-      if (msg.includes('Email not confirmed')) {
-        throw new Error('Email not confirmed. Please check your inbox.');
-      }
-      throw new Error(msg || 'Login failed');
+  const { data, error } = await db.auth.signInWithPassword({
+    email: email.trim().toLowerCase(),
+    password
+  });
+  
+  if (error) {
+    const msg = error.message || '';
+    if (msg.includes('Invalid login credentials')) {
+      throw new Error('Invalid email or password. Check your credentials and try again.');
     }
-    currentSession = data.session;
-    currentUser = data.user;
-    await checkAdminStatus();
-    return data;
-  }
-
-  try {
-    return await doSignIn();
-  } catch (error) {
-    const isAbort = error?.name === 'AbortError' || (error?.message || '').includes('aborted');
-    if (isAbort) {
-      await new Promise(r => setTimeout(r, 1500));
-      try {
-        return await doSignIn();
-      } catch (retryErr) {
-        throw new Error('Connection was interrupted. Please refresh the page and try again.');
-      }
+    if (msg.includes('Email not confirmed')) {
+      throw new Error('Email not confirmed. Please check your inbox.');
     }
-    throw error;
+    throw new Error(msg || 'Login failed');
   }
+  
+  currentSession = data.session;
+  currentUser = data.user;
+  await checkAdminStatus();
+  return data;
 }
 
 // Change password
@@ -355,14 +341,15 @@ async function updateProfile(userId, updates) {
 // ========== BOOKINGS ==========
 
 async function loadBookings() {
+  // Everyone sees all approved bookings (to know what's unavailable)
+  // Non-admins also see their own pending/cancelled/declined
   let query = db
     .from('bookings')
     .select('*')
     .order('start_time', { ascending: true });
   
-  // Non-admins only see their own bookings
   if (!isAdmin && currentUser) {
-    query = query.eq('user_id', currentUser.id);
+    query = query.or(`status.eq.approved,user_id.eq.${currentUser.id}`);
   }
   
   const { data, error } = await query;
@@ -399,31 +386,18 @@ async function requestBooking(startISO, endISO, userNotes = '') {
     throw new Error('Must be logged in to book');
   }
 
-  async function doRequest() {
-    const { data, error } = await db.rpc('request_booking', {
-      p_start: startISO,
-      p_end: endISO,
-      p_user_notes: userNotes || null
-    });
-    if (error) throw new Error(error.message || 'Failed to create booking');
-    await loadBookings();
-    return data;
+  const { data, error } = await db.rpc('request_booking', {
+    p_start: startISO,
+    p_end: endISO,
+    p_user_notes: userNotes || null
+  });
+  
+  if (error) {
+    throw new Error(error.message || 'Failed to create booking');
   }
-
-  try {
-    return await doRequest();
-  } catch (error) {
-    const isAbort = error?.name === 'AbortError' || error?.message?.includes('aborted');
-    if (isAbort) {
-      await new Promise(r => setTimeout(r, 1500));
-      try {
-        return await doRequest();
-      } catch (retryErr) {
-        throw new Error('Connection was interrupted. Please refresh the page and try again.');
-      }
-    }
-    throw error;
-  }
+  
+  await loadBookings();
+  return data;
 }
 
 // Cancel own booking (users can only cancel pending bookings)
