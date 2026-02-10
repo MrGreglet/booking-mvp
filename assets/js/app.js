@@ -648,7 +648,12 @@ function isRecoveryHash() {
 async function init() {
   try {
     const isRecovery = isRecoveryHash();
-    await storage.loadAll();
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Load timeout')), 15000)
+    );
+    
+    await Promise.race([storage.loadAll(), timeoutPromise]);
     currentUser = storage.getCurrentUser();
 
     if (isRecovery) {
@@ -674,8 +679,9 @@ async function init() {
     showToast(`Welcome back, ${(currentUser?.email || 'User').split('@')[0]}!`);
   } catch (error) {
     console.error('Initialization error:', error);
+    hideLoadingOverlay();
     showLoginView();
-    showToast('Failed to load application', 'error');
+    showToast(error?.message?.includes('timeout') ? 'Connection timeout. Please refresh.' : 'Failed to load application', 'error');
   }
 }
 
