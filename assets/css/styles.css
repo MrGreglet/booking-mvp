@@ -649,6 +649,26 @@ body.admin-bg {
   position: relative;
 }
 
+/* Admin calendar: booked slots are clickable */
+.admin-calendar-grid .slot-cell.booked {
+  cursor: pointer !important;
+}
+
+.admin-calendar-grid .slot-cell.booked:hover {
+  background: rgba(34, 197, 94, 0.35);
+  outline: 2px solid rgba(34, 197, 94, 0.8);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
+/* Admin calendar: general clickable slots (empty/no class) */
+.admin-calendar-grid .slot-cell:not(.past):not(.booked):not(.pending):not(.multiple-pending):not(.blocked):not(.available):hover {
+  background: rgba(255, 255, 255, 0.08);
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  z-index: 3;
+}
+
 .calendar-grid .slot-cell.booked::after {
   content: '✓';
   position: absolute;
