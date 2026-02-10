@@ -981,8 +981,66 @@ function openAdminBookingDetails(bookingId) {
 
 async function handleApproveBooking(bookingId) {
   try {
+    const booking = storage.getBookings().find(b => b.id === bookingId);
+    if (!booking) {
+      showToast('Booking not found', 'error');
+      return;
+    }
+    
+    // Find conflicting pending bookings
+    const settings = storage.getSettings();
+    const bufferMs = settings.bufferMinutes * 60 * 1000;
+    const bookingStart = new Date(booking.startISO).getTime();
+    const bookingEnd = new Date(booking.endISO).getTime();
+    
+    const conflictingBookings = storage.getBookings().filter(b => {
+      if (b.id === bookingId) return false; // Skip the booking we're approving
+      if (b.status !== 'pending') return false; // Only check pending bookings
+      
+      const bStart = new Date(b.startISO).getTime();
+      const bEnd = new Date(b.endISO).getTime();
+      
+      // Check for overlap with buffer
+      return (
+        (bookingStart >= bStart - bufferMs && bookingStart < bEnd + bufferMs) ||
+        (bookingEnd > bStart - bufferMs && bookingEnd <= bEnd + bufferMs) ||
+        (bookingStart <= bStart - bufferMs && bookingEnd >= bEnd + bufferMs)
+      );
+    });
+    
+    // Approve the booking first
     await storage.setBookingStatus(bookingId, 'approved');
-    showToast('Booking approved', 'success');
+    
+    // If there are conflicts, handle them
+    if (conflictingBookings.length > 0) {
+      const declineNote = prompt(
+        `${conflictingBookings.length} other pending booking(s) conflict with this time slot.\n\n` +
+        `They will be automatically declined.\n\n` +
+        `Add a note to send to the user(s) (optional):`,
+        'Another booking was approved for this time slot.'
+      );
+      
+      // If user didn't cancel the prompt, decline the conflicting bookings
+      if (declineNote !== null) {
+        for (const conflictBooking of conflictingBookings) {
+          try {
+            await storage.setBookingStatus(
+              conflictBooking.id, 
+              'declined', 
+              declineNote || 'Another booking was approved for this time slot.'
+            );
+          } catch (err) {
+            console.error('Failed to decline conflicting booking:', err);
+          }
+        }
+        showToast(`Booking approved. ${conflictingBookings.length} conflicting booking(s) declined.`, 'success');
+      } else {
+        showToast('Booking approved', 'success');
+      }
+    } else {
+      showToast('Booking approved', 'success');
+    }
+    
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to approve booking', 'error');
