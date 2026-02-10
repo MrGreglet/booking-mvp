@@ -85,8 +85,8 @@ async function handleAdminLogin(e) {
     await init();
     
   } catch (error) {
-    console.error('Login error:', error);
-    errorEl.textContent = error.message || 'Login failed';
+    const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';
+    errorEl.textContent = errMsg;
     emailInput.disabled = false;
     passwordInput.disabled = false;
     submitBtn.disabled = false;

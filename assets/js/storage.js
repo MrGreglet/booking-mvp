@@ -128,32 +128,40 @@ async function signOut() {
 
 // Password authentication
 async function signInWithPassword(email, password) {
-  console.log('signInWithPassword called for:', email);
-  
-  const { data, error } = await db.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password: password
-  });
-  
-  if (error) {
-    console.error('Supabase auth error:', error);
-    
-    // Provide helpful error messages
-    if (error.message.includes('Invalid login credentials')) {
-      throw new Error('Invalid email or password. Check your credentials and try again.');
-    } else if (error.message.includes('Email not confirmed')) {
-      throw new Error('Email not confirmed. Please check your inbox.');
-    } else {
-      throw new Error(error.message || 'Login failed');
+  const opts = { email: email.trim().toLowerCase(), password };
+
+  async function doSignIn() {
+    const { data, error } = await db.auth.signInWithPassword(opts);
+    if (error) {
+      const msg = error.message || '';
+      if (msg.includes('Invalid login credentials')) {
+        throw new Error('Invalid email or password. Check your credentials and try again.');
+      }
+      if (msg.includes('Email not confirmed')) {
+        throw new Error('Email not confirmed. Please check your inbox.');
+      }
+      throw new Error(msg || 'Login failed');
     }
+    currentSession = data.session;
+    currentUser = data.user;
+    await checkAdminStatus();
+    return data;
   }
-  
-  console.log('Login successful!');
-  currentSession = data.session;
-  currentUser = data.user;
-  await checkAdminStatus();
-  
-  return data;
+
+  try {
+    return await doSignIn();
+  } catch (error) {
+    const isAbort = error?.name === 'AbortError' || (error?.message || '').includes('aborted');
+    if (isAbort) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        return await doSignIn();
+      } catch (retryErr) {
+        throw new Error('Connection was interrupted. Please refresh the page and try again.');
+      }
+    }
+    throw error;
+  }
 }
 
 // Change password

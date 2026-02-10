@@ -185,10 +185,10 @@ async function handlePasswordLogin(e) {
     showAppView();
     await init();
   } catch (error) {
-    // Error
+    const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';
     statusEl.innerHTML = `
       <div style="color: var(--danger); margin-top: 1rem; padding: 1rem; background: rgba(239, 68, 68, 0.1); border-radius: var(--radius-md);">
-        ${error.message || 'Login failed'}
+        ${errMsg}
       </div>
     `;
     
@@ -673,7 +673,7 @@ async function init() {
     updateWeekLabel();
     renderCalendar();
     bindWeekNav();
-    showToast(`Welcome back, ${currentUser.email.split('@')[0]}!`);
+    showToast(`Welcome back, ${(currentUser?.email || 'User').split('@')[0]}!`);
   } catch (error) {
     console.error('Initialization error:', error);
     showLoginView();

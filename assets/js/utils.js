@@ -93,7 +93,7 @@ function showToast(msg, type = 'success', timeout = 3500) {
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
-  toast.textContent = msg;
+  toast.textContent = (msg != null && String(msg)) ? msg : 'Something went wrong';
   container.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
