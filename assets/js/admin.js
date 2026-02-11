@@ -7,7 +7,7 @@
 'use strict';
 
 const {
-  formatTimeHM, formatDateYMD, formatDateWeekday, formatDateShort, getDayName, isSameDay,
+  formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, formatDateShort, getDayName, isSameDay,
   getISOWeek, getWeekStart, addDays, addMinutes,
   showToast, openSlidein, closeSlidein
 } = window.utils;
@@ -200,8 +200,8 @@ function renderInvitesPanel() {
         <label for="invite-email-inline">Email Address</label>
         <input type="email" id="invite-email-inline" placeholder="user@example.com" required autocomplete="email">
       </div>
-      <p class="form-hint">A temporary password will be generated. The user must change it on first login.</p>
-      <button type="submit" class="primary">Create User</button>
+      <p class="form-hint">User will receive an invite email to set their password and access the system.</p>
+      <button type="submit" class="primary">Send Invite</button>
     </form>
   `;
   
@@ -225,7 +225,7 @@ function renderInvitesPanel() {
       html += `
         <tr>
           <td>${user.email}</td>
-          <td>${formatDateYMD(invitedDate)} ${formatTimeHM(invitedDate)}</td>
+          <td>${formatDateDDMMYY(invitedDate)} ${formatTimeHM(invitedDate)}</td>
           <td>
             <button class="action-btn danger remove-invite-btn" data-email="${user.email}">Remove</button>
           </td>
@@ -259,43 +259,33 @@ async function handleInviteUserInline(e) {
   
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating...';
+    submitBtn.textContent = 'Sending invite...';
   }
   
   try {
-    // Generate temporary password
-    const tempPassword = generateTempPassword();
-    
-    // Create user via signUp (will auto-confirm)
-    const { data: signUpData, error: signUpError } = await window.supabaseClient.auth.signUp({
-      email: email,
-      password: tempPassword,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: {
-          first_login: true
-        }
-      }
+    // Call Edge Function to invite user
+    const { data, error } = await window.supabaseClient.functions.invoke('admin-invite-user', {
+      body: { email }
     });
     
-    // Even if rate limit error, user might still be created
-    // Only throw if it's NOT a rate limit error and NOT "already registered"
-    if (signUpError && 
-        !signUpError.message.includes('rate limit') && 
-        !signUpError.message.includes('already registered')) {
-      throw new Error(signUpError.message);
+    if (error) {
+      throw error;
     }
     
-    // Add to allowed_users
-    await storage.inviteUser(email);
+    if (data?.error) {
+      throw new Error(data.error);
+    }
     
-    // Show success with credentials (ignore rate limit errors)
-    showCredentialsDialog(email, tempPassword);
+    // Success - refresh the list
+    await storage.loadAllowedUsers();
     renderInvitesPanel();
     if (emailInput) emailInput.value = '';
     
+    showToast(`Invite sent to ${email}. They will receive an email to set their password.`, 'success');
+    
   } catch (error) {
-    showToast(error.message || 'Failed to create user', 'error');
+    const errorMsg = error.message || 'Failed to send invite';
+    showToast(errorMsg, 'error');
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Create User';
@@ -303,72 +293,7 @@ async function handleInviteUserInline(e) {
   }
 }
 
-function showManualSetupDialog(email, password) {
-  let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2 style="color: var(--accent);">⚠️ Manual Setup Required</h2>`;
-  html += `<p style="margin: 1rem 0;">User added to allowlist. You need to create their account manually:</p>`;
-  html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0;">`;
-  html += `<h3 style="margin-bottom: 1rem;">Steps:</h3>`;
-  html += `<ol style="margin-left: 1.5rem; line-height: 1.8;">`;
-  html += `<li>Go to Supabase Dashboard → Authentication → Users</li>`;
-  html += `<li>Click "Add User"</li>`;
-  html += `<li>Use email: <code style="background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px;">${email}</code></li>`;
-  html += `<li>Set password: <code style="background: rgba(0,0,0,0.3); padding: 0.2rem 0.5rem; border-radius: 4px;">${password}</code></li>`;
-  html += `<li>Enable "Auto Confirm User"</li>`;
-  html += `</ol>`;
-  html += `</div>`;
-  html += `<div class="form-actions">`;
-  html += `<button class="primary" id="copy-setup-btn">Copy Password</button>`;
-  html += `<a href="https://supabase.com/dashboard/project/qkjcqtsacuspfdslgfxj/auth/users" target="_blank" class="primary" style="display: inline-block; padding: 0.75rem 1.5rem; text-decoration: none;">Open Supabase Dashboard</a>`;
-  html += `<button class="secondary close-dialog-btn">Close</button>`;
-  html += `</div>`;
-  
-  openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
-  
-  document.getElementById('copy-setup-btn').onclick = () => {
-    navigator.clipboard.writeText(password).then(() => {
-      showToast('Password copied!', 'success');
-    });
-  };
-}
-
-function generateTempPassword() {
-  // Generate a random 12-character password
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let password = '';
-  for (let i = 0; i < 12; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-function showCredentialsDialog(email, password) {
-  let html = `<button class="close-btn" aria-label="Close">×</button>`;
-  html += `<h2 style="color: var(--success);">✓ User Created</h2>`;
-  html += `<p style="margin: 1rem 0;">Send these login credentials to the user:</p>`;
-  html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0; font-family: monospace;">`;
-  html += `<div style="margin-bottom: 1rem;"><strong>Email:</strong><br>${email}</div>`;
-  html += `<div><strong>Temporary Password:</strong><br>${password}</div>`;
-  html += `</div>`;
-  html += `<p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">⚠️ Save this password - it won't be shown again! The user must change it on first login.</p>`;
-  html += `<div class="form-actions">`;
-  html += `<button class="primary" id="copy-credentials-btn">Copy to Clipboard</button>`;
-  html += `<button class="secondary close-dialog-btn">Close</button>`;
-  html += `</div>`;
-  
-  openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.querySelector('.close-dialog-btn').onclick = closeSlidein;
-  
-  document.getElementById('copy-credentials-btn').onclick = () => {
-    const text = `Studio94 Booking Login\n\nEmail: ${email}\nTemporary Password: ${password}\n\nPlease change your password after first login.`;
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('Credentials copied to clipboard!', 'success');
-    });
-  };
-}
+// Removed generateTempPassword() and showCredentialsDialog() - no longer needed with invite flow
 
 function confirmRemoveInvite(email) {
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
@@ -570,17 +495,17 @@ function renderBookingsPanel() {
       <span class="info-text">${pendingCount} pending approval</span>
     </div>
     
-    <!-- Calendar Navigation -->
-    <div class="calendar-controls">
-      <button id="admin-prev-week" aria-label="Previous week">&lt;</button>
-      <span id="admin-week-label"></span>
-      <button id="admin-next-week" aria-label="Next week">&gt;</button>
-      <button id="admin-today-btn">Today</button>
-    </div>
-    
-    <!-- Calendar Grid -->
-    <div id="admin-calendar-grid" class="calendar-grid" style="margin-bottom: 2rem;">
+    <!-- Calendar Navigation + Grid (sticky together on scroll) -->
+    <div class="calendar-sticky-header">
+      <div class="calendar-controls">
+        <button id="admin-prev-week" aria-label="Previous week">&lt;</button>
+        <span id="admin-week-label"></span>
+        <button id="admin-next-week" aria-label="Next week">&gt;</button>
+        <button id="admin-today-btn">Today</button>
+      </div>
+      <div id="admin-calendar-grid" class="calendar-grid" style="margin-bottom: 2rem;">
       <!-- Calendar rendered by renderAdminCalendar() -->
+      </div>
     </div>
     
     <!-- Bookings Table Below -->
@@ -625,7 +550,7 @@ function renderBookingsPanel() {
       html += `
         <tr ${isPast ? 'style="opacity: 0.6;"' : ''}>
           <td>
-            <b>${formatDateYMD(start)}</b><br>
+            <b>${formatDateDDMMYY(start)}</b><br>
             ${formatTimeHM(start)} - ${formatTimeHM(end)}
             ${isPast ? '<span style="color: var(--text-muted); font-size: 0.8rem;"> (past)</span>' : ''}
           </td>
@@ -682,6 +607,43 @@ function renderBookingsPanel() {
     adminCurrentWeekStart = getWeekStart(new Date());
     renderAdminCalendar();
   };
+
+  // Swipe to change weeks on mobile (admin calendar)
+  const adminSwipeTarget = panel.querySelector('.calendar-sticky-header');
+  if (adminSwipeTarget) {
+    let startX = 0, startY = 0, startPointerId = null;
+    const SWIPE_THRESHOLD = 40;
+
+    const goPrevWeek = () => {
+      adminCurrentWeekStart = new Date(adminCurrentWeekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+      renderAdminCalendar();
+    };
+    const goNextWeek = () => {
+      adminCurrentWeekStart = new Date(adminCurrentWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+      renderAdminCalendar();
+    };
+
+    adminSwipeTarget.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.buttons !== 1) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      startPointerId = e.pointerId;
+    }, { passive: true });
+
+    adminSwipeTarget.addEventListener('pointerup', (e) => {
+      if (e.pointerId === startPointerId) {
+        const diffX = e.clientX - startX;
+        const diffY = e.clientY - startY;
+        if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(diffX) > Math.abs(diffY)) {
+          if (diffX > 0) goPrevWeek();
+          else goNextWeek();
+        }
+        startPointerId = null;
+      }
+    }, { passive: true });
+
+    adminSwipeTarget.addEventListener('pointercancel', () => { startPointerId = null; }, { passive: true });
+  }
   
   // Toggle past bookings button
   const togglePastBtn = document.getElementById('toggle-past-bookings-btn');
@@ -856,7 +818,7 @@ function openMultipleBookingsPanel(bookingIds) {
           <span class="badge badge-${statusClass}">${booking.status}</span>
         </div>
         <div style="font-size: 0.9rem; color: var(--text-muted);">
-          ${formatDateYMD(start)} ${formatTimeHM(start)} - ${formatTimeHM(end)} (${booking.durationMinutes} min)
+          ${formatDateDDMMYY(start)} ${formatTimeHM(start)} - ${formatTimeHM(end)} (${booking.durationMinutes} min)
         </div>
         ${booking.userNotes ? `<div style="font-size: 0.85rem; margin-top: 0.5rem; font-style: italic;">"${booking.userNotes}"</div>` : ''}
       </div>
@@ -894,7 +856,7 @@ function openAdminBookingDetails(bookingId) {
   html += `<h2>Booking Details</h2>`;
   
   html += `<div style="background: var(--bg-glass); padding: 1.5rem; border-radius: var(--radius-md); margin: 1.5rem 0;">`;
-  html += `<div style="margin-bottom: 1rem;"><strong>Date:</strong> ${formatDateYMD(start)}</div>`;
+  html += `<div style="margin-bottom: 1rem;"><strong>Date:</strong> ${formatDateDDMMYY(start)}</div>`;
   html += `<div style="margin-bottom: 1rem;"><strong>Time:</strong> ${formatTimeHM(start)} - ${formatTimeHM(end)}</div>`;
   html += `<div style="margin-bottom: 1rem;"><strong>Duration:</strong> ${booking.durationMinutes} minutes</div>`;
   html += `<div style="margin-bottom: 1rem;"><strong>User:</strong> ${booking.userEmail}</div>`;
@@ -1011,6 +973,11 @@ async function handleApproveBooking(bookingId) {
     // Approve the booking first
     await storage.setBookingStatus(bookingId, 'approved');
     
+    // Send approval email (non-blocking)
+    if (window.emailNotifications) {
+      window.emailNotifications.notifyBookingEmail('BOOKING_APPROVED', bookingId);
+    }
+    
     // If there are conflicts, handle them
     if (conflictingBookings.length > 0) {
       const declineNote = prompt(
@@ -1029,6 +996,11 @@ async function handleApproveBooking(bookingId) {
               'declined', 
               declineNote || 'Another booking was approved for this time slot.'
             );
+            
+            // Send decline email for each conflicting booking (non-blocking)
+            if (window.emailNotifications) {
+              window.emailNotifications.notifyBookingEmail('BOOKING_DECLINED', conflictBooking.id);
+            }
           } catch (err) {
             console.error('Failed to decline conflicting booking:', err);
           }
@@ -1053,6 +1025,12 @@ async function handleDeclineBooking(bookingId) {
   try {
     await storage.setBookingStatus(bookingId, 'declined', notes || '');
     showToast('Booking declined', 'success');
+    
+    // Send decline email (non-blocking)
+    if (window.emailNotifications) {
+      window.emailNotifications.notifyBookingEmail('BOOKING_DECLINED', bookingId);
+    }
+    
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to decline booking', 'error');
@@ -1065,6 +1043,12 @@ async function handleCancelBooking(bookingId) {
   try {
     await storage.setBookingStatus(bookingId, 'cancelled', notes || '');
     showToast('Booking cancelled', 'success');
+    
+    // Send cancellation email (non-blocking)
+    if (window.emailNotifications) {
+      window.emailNotifications.notifyBookingEmail('BOOKING_CANCELLED', bookingId);
+    }
+    
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to cancel booking', 'error');
@@ -1084,7 +1068,7 @@ function confirmDeleteBooking(bookingId) {
     <p>Are you sure you want to permanently delete this booking?</p>
     <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin: 1rem 0;">
       <p style="margin: 0.5rem 0;"><strong>User:</strong> ${booking.userEmail}</p>
-      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
       <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
       <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
     </div>
@@ -1188,30 +1172,36 @@ function openEditBookingForm(bookingId) {
 }
 
 function openCreateBookingForm(slotISO) {
-  const startDate = slotISO ? new Date(slotISO) : new Date();
-  const dateStr = formatDateYMD(startDate);
-  const startTime = slotISO ? formatTimeHM(startDate) : '14:00';
-  const endTime = slotISO ? formatTimeHM(addMinutes(startDate, 60)) : '15:00';
+  if (!slotISO) {
+    showToast('Please select a time slot on the calendar first', 'error');
+    return;
+  }
+  const startDate = new Date(slotISO);
   
   let html = `<button class="close-btn" aria-label="Close">×</button>`;
   html += `<h2>Add New Booking</h2>`;
   html += `<p style="color: var(--text-muted); margin-bottom: 1rem;">Create a one-off booking without requiring a user account.</p>`;
   html += `<form id="create-booking-form">
     <div class="form-group">
+      <label>Date & Time</label>
+      <input type="text" value="${formatDateDDMMYY(startDate)} ${formatTimeHM(startDate)}" disabled>
+    </div>
+    <div class="form-group">
+      <label for="create-duration">Duration</label>
+      <select id="create-duration" required>
+        <option value="60">1 hour</option>
+        <option value="120">2 hours</option>
+        <option value="180">3 hours</option>
+        <option value="240">4 hours</option>
+        <option value="300">5 hours</option>
+        <option value="360">6 hours</option>
+        <option value="420">7 hours</option>
+        <option value="480">8 hours</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label for="create-client-name">Client / Display Name</label>
       <input type="text" id="create-client-name" placeholder="Walk-in" value="Walk-in">
-    </div>
-    <div class="form-group">
-      <label for="create-date">Date</label>
-      <input type="date" id="create-date" value="${dateStr}" required>
-    </div>
-    <div class="form-group">
-      <label for="create-start-time">Start Time</label>
-      <input type="time" id="create-start-time" value="${startTime}" required>
-    </div>
-    <div class="form-group">
-      <label for="create-end-time">End Time</label>
-      <input type="time" id="create-end-time" value="${endTime}" required>
     </div>
     <div class="form-group">
       <label for="create-user-notes">Notes (optional)</label>
@@ -1234,24 +1224,13 @@ function openCreateBookingForm(slotISO) {
   document.getElementById('create-booking-form').onsubmit = async (e) => {
     e.preventDefault();
     const clientName = document.getElementById('create-client-name').value.trim() || 'Walk-in';
-    const date = document.getElementById('create-date').value;
-    const startTime = document.getElementById('create-start-time').value;
-    const endTime = document.getElementById('create-end-time').value;
+    const durationMinutes = parseInt(document.getElementById('create-duration').value);
     const userNotes = document.getElementById('create-user-notes').value.trim();
     const adminNotes = document.getElementById('create-admin-notes').value.trim();
     
-    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
-    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
-    
-    const durationMinutes = Math.round((new Date(endISO) - new Date(startISO)) / 60000);
-    if (durationMinutes < 60) {
-      showToast('Duration must be at least 1 hour', 'error');
-      return;
-    }
-    if (durationMinutes % 30 !== 0) {
-      showToast('Duration must be a multiple of 30 minutes', 'error');
-      return;
-    }
+    const endDate = addMinutes(startDate, durationMinutes);
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
     
     try {
       await storage.adminCreateBooking(startISO, endISO, clientName, userNotes, adminNotes);
@@ -1383,6 +1362,10 @@ async function init() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', async () => {
+  const name = window.CONFIG?.branding?.appNameAdmin || 'Admin';
+  document.title = name;
+  const logo = document.getElementById('adminLogo');
+  if (logo) logo.textContent = name;
   await init();
 });
 

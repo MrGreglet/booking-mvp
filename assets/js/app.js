@@ -7,7 +7,7 @@
 'use strict';
 
 const {
-  formatTimeHM, formatDateYMD, formatDateWeekday, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween,
+  formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, getDayName, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween,
   showToast, openSlidein, closeSlidein
 } = window.utils;
 
@@ -134,6 +134,19 @@ async function handleResetPasswordSubmit(e) {
   statusEl.style.color = '';
   try {
     await storage.changePassword(newPw);
+    
+    // Clear first_login flag so user isn't prompted to change password again
+    try {
+      await storage.markPasswordChanged();
+    } catch (metadataError) {
+      console.error('Failed to clear first_login flag:', metadataError);
+      statusEl.textContent = 'Password updated, but profile update failed — please refresh and try again.';
+      statusEl.style.color = 'var(--danger)';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Set password';
+      return;
+    }
+    
     await storage.signOut();
     statusEl.textContent = 'Password updated. You can now log in.';
     statusEl.style.color = 'var(--success)';
@@ -178,19 +191,9 @@ async function handlePasswordLogin(e) {
   statusEl.textContent = '';
   
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'before signIn',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
     await storage.signInWithPassword(email, password);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'after signIn success',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
-    // Success - will trigger auth state change
     showToast('Logged in successfully!');
     showAppView();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:handlePasswordLogin',message:'before init',data:{},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-    // #endregion
     await init();
   } catch (error) {
     const errMsg = (error?.message != null && String(error.message)) ? error.message : 'Login failed';
@@ -304,7 +307,7 @@ function openMyBookingsPanel() {
                          b.status === 'cancelled' ? 'cancelled' : 'pending';
       
       html += `<li>
-        <b>${formatDateYMD(new Date(b.startISO))}</b> 
+        <b>${formatDateDDMMYY(new Date(b.startISO))}</b> 
         ${formatTimeHM(new Date(b.startISO))}–${formatTimeHM(new Date(b.endISO))}
         <span class="status status-${statusClass}">${b.status}</span>
         ${b.userNotes ? `<div class="notes">Note: ${b.userNotes}</div>` : ''}
@@ -335,7 +338,7 @@ function confirmCancelBooking(bookingId) {
   html += `<div style="margin: 1.5rem 0;">
     <p style="font-size: 1.1rem; margin-bottom: 1rem;">Are you sure you want to cancel this booking?</p>
     <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
-      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateYMD(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
       <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
       <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
     </div>
@@ -401,7 +404,7 @@ function renderCalendar() {
   for (const day of days) {
     const isToday = formatDateYMD(day) === formatDateYMD(new Date());
     html += `<div class="day-header ${isToday ? 'today' : ''}">
-      <div class="day-name">${formatDateWeekday(day)}</div>
+      <div class="day-name">${getDayName(day)}</div>
       <div class="day-date">${day.getDate()}</div>
     </div>`;
   }
@@ -515,7 +518,7 @@ function renderMyBookingsList() {
                        b.status === 'declined' ? 'declined' :
                        b.status === 'cancelled' ? 'cancelled' : 'pending';
     html += `<li class="booking-item status-${statusClass}">
-      <span class="booking-date">${formatDateYMD(new Date(b.startISO))}</span>
+      <span class="booking-date">${formatDateDDMMYY(new Date(b.startISO))}</span>
       <span class="booking-time">${formatTimeHM(new Date(b.startISO))}–${formatTimeHM(new Date(b.endISO))}</span>
       <span class="booking-status status-${statusClass}">${b.status}</span>
       ${b.status === 'pending' ? `<button class="cancel-booking-btn small" data-id="${b.id}">Cancel</button>` : ''}
@@ -546,7 +549,7 @@ function openBookingPanel(startISO) {
   html += `<form id="booking-form" class="booking-form">
     <div class="form-group">
       <label>Date & Time</label>
-      <input type="text" value="${formatDateYMD(startDate)} ${formatTimeHM(startDate)}" disabled>
+      <input type="text" value="${formatDateDDMMYY(startDate)} ${formatTimeHM(startDate)}" disabled>
     </div>
     <div class="form-group">
       <label for="booking-duration">Duration</label>
@@ -595,11 +598,16 @@ async function submitBookingRequest(e, startISO) {
   
   try {
     // Request booking via RPC (server validates everything)
-    await storage.requestBooking(startISO, endISO, notes);
+    const bookingId = await storage.requestBooking(startISO, endISO, notes);
     
     showToast('Booking request submitted! Waiting for admin approval.', 'success');
     closeSlidein();
     renderCalendar();
+    
+    // Send email notification (non-blocking)
+    if (bookingId && window.emailNotifications) {
+      window.emailNotifications.notifyBookingEmail('BOOKING_SUBMITTED', bookingId);
+    }
   } catch (error) {
     // Server returned validation error
     showToast(error.message || 'Failed to create booking', 'error');
@@ -618,21 +626,23 @@ function updateWeekLabel() {
   const weekEnd = addDays(currentWeekStart, 6);
   
   document.getElementById('week-label').textContent = 
-    `Week ${weekNum}, ${year} (${formatDateYMD(currentWeekStart)} – ${formatDateYMD(weekEnd)})`;
+    `Week ${weekNum}, ${year} (${formatDateDDMMYY(currentWeekStart)} – ${formatDateDDMMYY(weekEnd)})`;
 }
 
 function bindWeekNav() {
   const prevBtn = document.getElementById('prev-week');
   const nextBtn = document.getElementById('next-week');
   const todayBtn = document.getElementById('today-btn');
-  
-  prevBtn.onclick = () => {
-    // Don't allow navigating to past weeks for users
+  const controlsEl = document.querySelector('.calendar-controls');
+
+  const goPrevWeek = () => {
+    // Don't allow navigating to weeks entirely in the past (block only when target week's Sunday is before today)
     const newWeekStart = addDays(currentWeekStart, -7);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const newWeekEnd = addDays(newWeekStart, 6); // Sunday of target week
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
     
-    if (newWeekStart < today) {
+    if (newWeekEnd < todayStart) {
       showToast('Cannot view past weeks', 'error');
       return;
     }
@@ -641,18 +651,61 @@ function bindWeekNav() {
     updateWeekLabel();
     renderCalendar();
   };
-  
-  nextBtn.onclick = () => {
+
+  const goNextWeek = () => {
     currentWeekStart = addDays(currentWeekStart, 7);
     updateWeekLabel();
     renderCalendar();
   };
-  
+
+  prevBtn.onclick = goPrevWeek;
+  nextBtn.onclick = goNextWeek;
+
   todayBtn.onclick = () => {
     currentWeekStart = getWeekStart(new Date());
     updateWeekLabel();
     renderCalendar();
   };
+
+  // Swipe to change weeks on mobile (works on controls bar and calendar area)
+  const calendarSection = document.querySelector('.calendar-section');
+  const swipeTarget = calendarSection || controlsEl;
+  if (swipeTarget) {
+    let startX = 0, startY = 0, startPointerId = null;
+    const SWIPE_THRESHOLD = 40;
+
+    function handleSwipeEnd(endX, endY) {
+      const diffX = endX - startX;
+      const diffY = endY - startY;
+      if (Math.abs(diffX) > SWIPE_THRESHOLD && Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX > 0) {
+          goPrevWeek();
+        } else {
+          goNextWeek();
+        }
+      }
+    }
+
+    // Pointer events: work for touch, mouse, stylus (better Android/Vanadium compatibility)
+    // Don't use setPointerCapture - it steals clicks from buttons and slots on PC
+    swipeTarget.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.buttons !== 1) return;
+      startX = e.clientX;
+      startY = e.clientY;
+      startPointerId = e.pointerId;
+    }, { passive: true });
+
+    swipeTarget.addEventListener('pointerup', (e) => {
+      if (e.pointerId === startPointerId) {
+        handleSwipeEnd(e.clientX, e.clientY);
+        startPointerId = null;
+      }
+    }, { passive: true });
+
+    swipeTarget.addEventListener('pointercancel', () => {
+      startPointerId = null;
+    }, { passive: true });
+  }
 }
 
 // ============================================================
@@ -682,7 +735,7 @@ function checkBookingNotifications() {
     setTimeout(() => {
       for (const booking of recentUpdates) {
         const start = new Date(booking.startISO);
-        const dateStr = formatDateYMD(start);
+        const dateStr = formatDateDDMMYY(start);
         const timeStr = formatTimeHM(start);
         
         if (booking.status === 'approved') {
@@ -756,6 +809,10 @@ async function init() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', async () => {
+  const name = window.CONFIG?.branding?.appName || 'Booking System';
+  document.title = name + ' Booking';
+  const logo = document.getElementById('appLogo');
+  if (logo) logo.textContent = name;
   await init();
 });
 

@@ -35,9 +35,10 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 
 ### 🛠️ Admin Dashboard
 - **4-Tab Interface**: Invites | Profiles | Bookings | Settings
-- **User Management**: Create users with temporary passwords
+- **User Management**: Invite users via Edge Function with email notifications
 - **Profile Editor**: Manage user memberships and contracts
 - **Booking Approval**: Approve, decline, or cancel bookings
+- **Email Notifications**: Auto-notify users on booking status changes
 - **Conflict Detection**: Automatic overlap prevention
 - **Weekly Limits**: Enforce booking quotas for subscribed users
 - **Admin Notes**: Add internal notes to bookings
@@ -52,8 +53,10 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 
 ### 🚀 Technical Highlights
 - **Supabase Auth**: Built-in password authentication
+- **Edge Functions**: Serverless email notifications via Resend
 - **PostgreSQL RLS**: Row-level security policies
 - **RPC Functions**: Server-side business logic
+- **Email Notifications**: Automated booking status emails (BCC to all admins)
 - **Real-time Sync**: Multi-device data synchronization
 - **Zero Dependencies**: Pure vanilla JavaScript
 - **Responsive Design**: Mobile-first UI with glassmorphism
@@ -102,19 +105,32 @@ Built with vanilla JavaScript, Supabase Auth, and PostgreSQL. Features glassmorp
 booking-mvp/
 ├── index.html                              # Public booking interface
 ├── admin.html                              # Admin dashboard
-├── DEPLOYMENT.md                           # Complete setup guide
+├── auth.html                               # Password reset page
+├── README.md                               # Project overview
 ├── TEST_PLAN.md                            # Comprehensive test plan
-├── supabase-auth-migration.sql             # Database migration
 ├── assets/
 │   ├── css/
 │   │   └── styles.css                      # Glassmorphism dark theme
 │   └── js/
-│       ├── utils.js                        # Utility functions (dates, toasts, etc.)
+│       ├── config.js                       # Configuration (Supabase URL/key, branding, settings)
 │       ├── supabase-config.js              # Supabase client initialization
+│       ├── email.js                        # Email notification helper
+│       ├── utils.js                        # Utility functions (dates, toasts, etc.)
 │       ├── storage.js                      # Data layer with Auth + RPC
 │       ├── app.js                          # Public booking UI logic
 │       └── admin.js                        # Admin dashboard logic
-└── README.md
+├── docs/
+│   └── DEPLOYMENT.md                       # Complete installation guide
+└── supabase/
+    ├── setup_fresh.sql                     # Fresh install (drops tables)
+    ├── upgrade_safe.sql                    # Safe updates (no data loss)
+    └── functions/
+        ├── admin-invite-user/              # Edge Function: User invites
+        │   ├── index.ts
+        │   └── README.md
+        └── send-booking-email/             # Edge Function: Email notifications
+            ├── index.ts
+            └── README.md
 ```
 
 ---
@@ -141,15 +157,14 @@ booking-mvp/
 
 ## Deployment
 
-**See [`DEPLOYMENT.md`](DEPLOYMENT.md) for complete setup instructions.**
+**See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for complete setup instructions.**
 
 ### Quick Summary
 
-1. **Database Setup**: Run `supabase-auth-migration.sql` in Supabase SQL Editor
+1. **Database Setup**: Run `supabase/setup_fresh.sql` in Supabase SQL Editor (or `supabase/upgrade_safe.sql` to update existing database)
 2. **Create Admin**: Insert your user_id into `admin_users` table
-3. **Configure Auth**: Enable email/password auth in Supabase Dashboard
-4. **Update Config**: Edit `assets/js/supabase-config.js` with your project credentials
-5. **Deploy**: Push to GitHub and enable GitHub Pages for hosting
+3. **Configure Frontend**: Edit `assets/js/config.js` with your Supabase URL, anon key, and branding
+4. **Deploy**: Upload to any static host (Netlify, Vercel, GitHub Pages, etc.)
 
 ---
 
@@ -273,14 +288,25 @@ Checks:
 
 ### Client Config
 
-File: `assets/js/supabase-config.js`
+File: `assets/js/config.js`
 
 ```javascript
-const SUPABASE_URL = 'https://your-project.supabase.co';
-const SUPABASE_ANON_KEY = 'your-anon-key'; // Safe to expose
+window.CONFIG = {
+  branding: {
+    appName: 'Studio94',
+    appNameAdmin: 'Studio94 Admin',
+    supportEmail: 'support@example.com'
+  },
+  supabase: {
+    url: 'https://your-project.supabase.co',
+    anonKey: 'your-anon-key'  // Safe to expose (RLS protects data)
+  },
+  timezone: 'Europe/London',
+  // ... more settings
+};
 ```
 
-⚠️ **IMPORTANT**: Replace these values with your own Supabase project credentials!
+⚠️ **IMPORTANT**: Replace `url` and `anonKey` with your own Supabase project credentials!
 
 ---
 
@@ -325,7 +351,7 @@ Requires:
 ### Local Testing
 
 1. Clone repository
-2. Update `supabase-config.js` with your project credentials
+2. Update `assets/js/config.js` with your Supabase credentials
 3. Open `index.html` in browser (no build step needed!)
 
 ### Debugging
@@ -384,14 +410,21 @@ For issues or questions:
 
 ---
 
-## Roadmap
+## Features Implemented
 
-- [ ] Email notifications for booking status
+- ✅ Email notifications for booking status (Resend API)
+- ✅ Edge Functions for user invites and emails
+- ✅ BCC notifications to all admins
+- ✅ Secure JWT validation in Edge Functions
+
+## Future Enhancements
+
 - [ ] Calendar export (iCal format)
 - [ ] Recurring bookings
 - [ ] Payment integration
 - [ ] Custom email templates
 - [ ] Multi-location support
+- [ ] SMS notifications
 
 ---
 

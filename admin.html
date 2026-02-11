@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Studio94 Admin">
   <meta name="theme-color" content="#232526">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://mrgreglet.github.io; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://esm.sh https://mrgreglet.github.io; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:7242 https://mrgreglet.github.io; style-src 'self' 'unsafe-inline' https://mrgreglet.github.io; font-src 'self' data:; img-src 'self' data: https:">
-  <title>Studio94 Admin</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:">
+  <title>Admin</title>
   <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body class="admin-bg">
@@ -35,7 +35,7 @@
   </div>
   <div id="admin-app" class="admin-app" style="display:none;">
     <header class="top-bar admin-top-bar">
-      <div class="logo">Studio94 Admin</div>
+      <div id="adminLogo" class="logo">Admin</div>
       <div class="admin-actions">
         <span id="pending-badge" class="activity-badge">0</span>
         <button id="logout-btn">Logout</button>
@@ -58,8 +58,10 @@
   <div id="toast-container" class="toast-container"></div>
   <!-- Supabase Client Library -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- App Scripts -->
+  <!-- App Scripts (config.js must load first) -->
+  <script src="assets/js/config.js"></script>
   <script src="assets/js/supabase-config.js"></script>
+  <script src="assets/js/email.js"></script>
   <script src="assets/js/utils.js"></script>
   <script src="assets/js/storage.js"></script>
   <script src="assets/js/admin.js"></script>

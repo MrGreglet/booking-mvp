@@ -8,13 +8,9 @@
 
 const db = window.supabaseClient;
 
-// Default settings (6 AM to midnight)
-const DEFAULT_SETTINGS = {
-  openTime: '06:00',
-  closeTime: '24:00',
-  bufferMinutes: 30,
-  slotIntervalMinutes: 60
-};
+function getDefaultSettings() {
+  return window.CONFIG?.defaults || { openTime: '06:00', closeTime: '24:00', bufferMinutes: 30, slotIntervalMinutes: 60 };
+}
 
 // Cache for loaded data
 let cachedSettings = null;
@@ -32,15 +28,9 @@ async function fetchWithAbortRetry(fetchFn, retries = 4) {
       const result = await fetchFn();
       const err = result?.error;
       const isAbort = err && (String(err.message || '').toLowerCase().includes('abort') || err.name === 'AbortError');
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:fetchWithAbortRetry',message:'attempt',data:{attempt:i,retries,hasError:!!err,isAbort:!!isAbort,lastAttempt:i===retries},timestamp:Date.now(),hypothesisId:'H3',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
       if (!err || (!isAbort || i === retries)) return result;
     } catch (e) {
       const isAbort = (e?.message || '').toLowerCase().includes('abort') || e?.name === 'AbortError';
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:fetchWithAbortRetry',message:'attempt threw',data:{attempt:i,retries,isAbort,lastAttempt:i===retries},timestamp:Date.now(),hypothesisId:'H3',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
       if (!isAbort || i === retries) throw e;
     }
     await new Promise(r => setTimeout(r, 500 * (i + 1)));
@@ -53,23 +43,14 @@ async function fetchWithAbortRetry(fetchFn, retries = 4) {
 async function initAuth() {
   let session = null;
   let sessionError = null;
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'initAuth started',data:{},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-  // #endregion
   for (let attempt = 0; attempt <= 3; attempt++) {
     try {
       const result = await db.auth.getSession();
       session = result?.data?.session ?? null;
       sessionError = result?.error ?? null;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'getSession ok',data:{hasSession:!!session,attempt},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
       break;
     } catch (error) {
       const isAbort = (error?.message || '').toLowerCase().includes('abort') || error?.name === 'AbortError';
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initAuth',message:'getSession threw',data:{attempt,isAbort},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
       if (!isAbort || attempt === 3) {
         console.warn('Auth getSession failed (network/abort):', error?.message || error);
         return currentUser;
@@ -224,9 +205,6 @@ async function markPasswordChanged() {
 // Listen for auth state changes
 db.auth.onAuthStateChange(async (event, session) => {
   console.log('Auth state changed:', event);
-  // #region agent log
-  if (event === 'SIGNED_IN') fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:onAuthStateChange',message:'Auth SIGNED_IN',data:{},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
   try {
     if (event === 'SIGNED_IN' && session) {
       currentSession = session;
@@ -250,7 +228,7 @@ db.auth.onAuthStateChange(async (event, session) => {
 // ========== SETTINGS ==========
 
 function getSettings() {
-  return cachedSettings || DEFAULT_SETTINGS;
+  return cachedSettings || getDefaultSettings();
 }
 
 async function loadSettings() {
@@ -260,7 +238,7 @@ async function loadSettings() {
   
   if (error) {
     console.error('Error loading settings:', error);
-    return DEFAULT_SETTINGS;
+    return getDefaultSettings();
   }
   
   if (data) {
@@ -271,7 +249,7 @@ async function loadSettings() {
       slotIntervalMinutes: data.slot_interval_minutes
     };
   }
-  return cachedSettings || DEFAULT_SETTINGS;
+  return cachedSettings || getDefaultSettings();
 }
 
 async function setSettings(updates) {
@@ -357,30 +335,76 @@ async function updateProfile(userId, updates) {
 
 // ========== BOOKINGS ==========
 
-async function loadBookings() {
-  // RLS policies: non-admins see own + all approved; admins see all
-  const { data, error } = await fetchWithAbortRetry(() =>
-    db.from('bookings').select('*').order('start_time', { ascending: true })
-  );
-  
-  if (error) {
-    console.error('Error loading bookings:', error);
-    return [];
-  }
-  
-  cachedBookings = (data || []).map(booking => ({
+function normalizeBooking(booking) {
+  return {
     id: booking.id,
     userId: booking.user_id,
-    userEmail: booking.user_email,
+    userEmail: booking.user_email ?? null,
     startISO: booking.start_time,
     endISO: booking.end_time,
     durationMinutes: booking.duration_minutes,
-    status: booking.status,
-    userNotes: booking.user_notes,
-    adminNotes: booking.admin_notes,
-    createdAt: booking.created_at
-  }));
-  
+    status: booking.status ?? 'approved',
+    userNotes: booking.user_notes ?? null,
+    adminNotes: booking.admin_notes ?? null,
+    createdAt: booking.created_at ?? null
+  };
+}
+
+async function loadBookings() {
+  if (isAdmin) {
+    // Admins: full access via RLS "Admins can view all bookings"
+    const { data, error } = await fetchWithAbortRetry(() =>
+      db.from('bookings').select('*').order('start_time', { ascending: true })
+    );
+    if (error) {
+      console.error('Error loading bookings:', error);
+      return [];
+    }
+    cachedBookings = (data || []).map(normalizeBooking);
+    return cachedBookings;
+  }
+
+  // Non-admins: own bookings (full) + approved slots only (no PII via RPC)
+  const [ownResult, slotsResult] = await Promise.all([
+    fetchWithAbortRetry(() =>
+      db.from('bookings').select('*').eq('user_id', currentUser.id).order('start_time', { ascending: true })
+    ),
+    fetchWithAbortRetry(() => db.rpc('get_approved_booking_slots'))
+  ]);
+
+  const ownData = ownResult?.data ?? [];
+  const slotsData = slotsResult?.data ?? [];
+  const slotsError = slotsResult?.error;
+
+  if (ownResult?.error) {
+    console.error('Error loading own bookings:', ownResult.error);
+  }
+  if (slotsError) {
+    console.error('Error loading approved slots:', slotsError);
+  }
+
+  // Own bookings: full details (includes pending, approved, declined, cancelled)
+  const ownBookings = ownData.map(normalizeBooking);
+
+  // Others' approved slots only (no PII) - for calendar availability
+  const othersApproved = slotsData
+    .filter(s => s.user_id !== currentUser.id)
+    .map(s => normalizeBooking({
+      id: s.id,
+      user_id: s.user_id,
+      user_email: null,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      duration_minutes: s.duration_minutes,
+      status: 'approved',
+      user_notes: null,
+      admin_notes: null,
+      created_at: null
+    }));
+
+  cachedBookings = [...ownBookings, ...othersApproved].sort(
+    (a, b) => new Date(a.startISO) - new Date(b.startISO)
+  );
   return cachedBookings;
 }
 
@@ -597,10 +621,6 @@ function getAllowedUsers() {
 // ========== INITIALIZATION ==========
 
 async function loadAll() {
-  // #region agent log
-  var _loadAllRunId = Date.now();
-  fetch('http://127.0.0.1:7242/ingest/be562c05-4b81-44cd-b5e5-6919afb000f2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:loadAll',message:'loadAll started',data:{runId:_loadAllRunId},timestamp:_loadAllRunId,runId:String(_loadAllRunId),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
   try {
     await initAuth();
     // Brief delay so auth state change from getSession() can settle (reduces AbortErrors)
@@ -611,7 +631,7 @@ async function loadAll() {
       await loadSettings();
     } catch (err) {
       console.warn('Could not load settings, using defaults');
-      cachedSettings = DEFAULT_SETTINGS;
+      cachedSettings = getDefaultSettings();
     }
     
     // Load data based on auth status

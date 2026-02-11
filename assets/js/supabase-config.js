@@ -1,15 +1,21 @@
 // Supabase Configuration
+// Requires CONFIG (from config.js) to be loaded first.
 (function() {
 'use strict';
 
-const SUPABASE_URL = 'https://qkjcqtsacuspfdslgfxj.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFramNxdHNhY3VzcGZkc2xnZnhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxNTM3MTEsImV4cCI6MjA4NTcyOTcxMX0.pl0ERMLuXNOivbbMipWXuEcxhBfzaWouBJplIotlqng';
+const url = window.CONFIG?.supabase?.url;
+const anonKey = window.CONFIG?.supabase?.anonKey;
 
-// Initialize Supabase client using the library's createClient function
+if (!url || !anonKey) {
+  console.error('[Supabase] Config missing: Set CONFIG.supabase.url and CONFIG.supabase.anonKey in config.js before loading this script.');
+  console.error('[Supabase] Initialization stopped.');
+  document.body.innerHTML = '<div style="font-family:system-ui,sans-serif;max-width:500px;margin:2rem auto;padding:2rem;text-align:center;"><h1>Configuration error</h1><p>Your Supabase URL and API key are not set. Please edit <code>assets/js/config.js</code> and add your project credentials.</p></div>';
+  return;
+}
+
 const { createClient } = supabase;
-const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = createClient(url, anonKey);
 
-// Export for use in other files
 window.supabaseClient = supabaseClient;
 
 })();

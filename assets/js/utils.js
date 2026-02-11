@@ -1,25 +1,22 @@
 // utils.js - General utilities for Studio94 Booking
-// All time logic uses Europe/London timezone.
+// All time logic uses CONFIG.timezone (default Europe/London).
 
-const TIMEZONE = 'Europe/London';
+function getTimezone() {
+  return window.CONFIG?.timezone || 'Europe/London';
+}
 
 // --- Date/Time Utilities ---
-// --- Date/Time Utilities ---
-// Use Intl.DateTimeFormat with Europe/London timezone for formatting
-
-const timeHMFormatter = new Intl.DateTimeFormat('en-GB', {
-  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TIMEZONE
-});
 
 function formatTimeHM(date) {
-  // Returns 'HH:mm' in London time
-  return timeHMFormatter.format(date);
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: getTimezone()
+  }).format(date);
 }
 
 function formatDateYMD(date) {
-  // Returns 'YYYY-MM-DD' in London time
+  // Returns 'YYYY-MM-DD' in configured timezone (for internal use, date inputs, comparisons)
   const parts = new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: TIMEZONE
+    year: 'numeric', month: '2-digit', day: '2-digit', timeZone: getTimezone()
   }).formatToParts(date);
   const y = parts.find(p => p.type === 'year').value;
   const m = parts.find(p => p.type === 'month').value;
@@ -27,10 +24,21 @@ function formatDateYMD(date) {
   return `${y}-${m}-${d}`;
 }
 
-function formatDateWeekday(date) {
-  // Returns 'Mon 3 Feb' in London time
+function formatDateDDMMYY(date) {
+  // Returns 'dd/mm/yy' for display (e.g. 10/02/25)
   const parts = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'short', day: 'numeric', month: 'short', timeZone: TIMEZONE
+    year: '2-digit', month: '2-digit', day: '2-digit', timeZone: getTimezone()
+  }).formatToParts(date);
+  const d = parts.find(p => p.type === 'day').value;
+  const m = parts.find(p => p.type === 'month').value;
+  const y = parts.find(p => p.type === 'year').value;
+  return `${d}/${m}/${y}`;
+}
+
+function formatDateWeekday(date) {
+  // Returns 'Mon 3 Feb' in configured timezone
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: getTimezone()
   }).formatToParts(date);
   const weekday = parts.find(p => p.type === 'weekday').value;
   const day = parts.find(p => p.type === 'day').value;
@@ -137,11 +145,9 @@ function closeSlidein() {
   setTimeout(() => { panel.innerHTML = ''; }, 400);
 }
 
-// Format date as "Mon, Feb 5"
+// Format date as "dd/mm/yy" (same as formatDateDDMMYY, alias for week labels etc.)
 function formatDateShort(date) {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${days[date.getDay()]}, ${months[date.getMonth()]} ${date.getDate()}`;
+  return formatDateDDMMYY(date);
 }
 
 // Get day name (Mon, Tue, etc.)
@@ -159,7 +165,7 @@ function isSameDay(date1, date2) {
 
 // --- Export ---
 window.utils = {
-  formatTimeHM, formatDateYMD, formatDateWeekday, formatDateShort, getDayName, isSameDay,
+  formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, formatDateShort, getDayName, isSameDay,
   getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
   simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein
 };

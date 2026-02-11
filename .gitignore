@@ -32,6 +32,7 @@ secrets.json
 
 # Supabase local development
 .supabase/
+supabase/.temp/
 
 # Build outputs (if added later)
 dist/

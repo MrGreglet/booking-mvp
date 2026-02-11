@@ -1,0 +1,12 @@
+-- ============================================================
+-- DEPRECATED: This file has been replaced
+-- ============================================================
+--
+-- For NEW installations, use:
+--   supabase/setup_fresh.sql
+--
+-- For UPDATES to existing installations, use:
+--   supabase/upgrade_safe.sql
+--
+-- See docs/DEPLOYMENT.md for complete installation instructions.
+-- ============================================================
