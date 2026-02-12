@@ -166,9 +166,27 @@ booking-mvp/
 ### Quick Summary
 
 1. **Database Setup**: Run `supabase/setup_fresh.sql` in Supabase SQL Editor (or `supabase/upgrade_safe.sql` to update existing database)
-2. **Create Admin**: Insert your user_id into `admin_users` table
-3. **Configure Frontend**: Edit `assets/js/config.js` with your Supabase URL, anon key, and branding
-4. **Deploy**: Upload to any static host (Netlify, Vercel, GitHub Pages, etc.)
+2. **Fix RLS Policy**: Run the admin_users RLS fix (see docs/DEPLOYMENT.md)
+3. **Create Admin**: Insert your user_id into `admin_users` table
+4. **Configure Frontend**: Edit `assets/js/config.js` with your Supabase URL, anon key, and branding
+5. **Deploy Edge Functions**: 
+   ```bash
+   supabase functions deploy send-booking-email --no-verify-jwt
+   supabase functions deploy admin-invite-user --no-verify-jwt
+   ```
+6. **Set Edge Function Secrets** (Supabase Dashboard):
+   - `RESEND_API_KEY` - Your Resend API key
+   - `EMAIL_FROM` - Your from email address
+7. **Deploy Frontend**: Upload to static host (Netlify, Vercel, GitHub Pages)
+8. **Update Supabase Site URL**: Set to your production domain in Supabase Dashboard → Settings → API
+
+### Custom Domain Setup (GitHub Pages)
+
+1. Add custom domain in GitHub repo settings
+2. Update DNS records at your registrar (CNAME or A records)
+3. Enable "Enforce HTTPS" in GitHub Pages settings
+4. **Update Supabase Site URL** to `https://yourdomain.com`
+5. Test invite flow to verify redirects work correctly
 
 ---
 
@@ -299,7 +317,7 @@ window.CONFIG = {
   branding: {
     appName: 'Studio94',
     appNameAdmin: 'Studio94 Admin',
-    supportEmail: 'support@example.com'
+    supportEmail: 'your-email@example.com'  // Update to your support email
   },
   supabase: {
     url: 'https://your-project.supabase.co',
