@@ -79,8 +79,24 @@ async function initAuth() {
     try {
       await checkAdminStatus();
     } catch (err) {
-      console.warn('Admin check failed:', err?.message || err);
-      /* leave isAdmin unchanged - may have been set by signInWithPassword */
+      const errMsg = err?.message || '';
+      
+      // If it's an RLS/permission error, log as warning but don't throw
+      // (user might legitimately not be admin)
+      if (errMsg.includes('permission check failed') || errMsg.includes('policy')) {
+        console.warn('Admin permission check had issues:', errMsg);
+        isAdmin = false; // Explicitly set to false on permission errors
+      }
+      // For network errors, log but don't crash the session
+      else if (errMsg.includes('network') || errMsg.includes('timeout')) {
+        console.warn('Network error during admin check, will retry on next action:', errMsg);
+        // Leave isAdmin as-is in case it was previously set
+      }
+      // Other errors
+      else {
+        console.warn('Admin check failed:', errMsg);
+        // Leave isAdmin unchanged for backward compatibility
+      }
     }
 
     try {
@@ -98,20 +114,88 @@ async function initAuth() {
   return null;
 }
 
-async function checkAdminStatus() {
+async function checkAdminStatus(retries = 2) {
   if (!currentUser) {
     isAdmin = false;
     return false;
   }
   
-  const { data, error } = await db
-    .from('admin_users')
-    .select('user_id')
-    .eq('user_id', currentUser.id)
-    .single();
+  let lastError = null;
   
-  isAdmin = !error && !!data;
-  return isAdmin;
+  // Retry logic for transient errors
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const { data, error } = await db
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', currentUser.id)
+        .single();
+      
+      // Distinguish between different error types
+      if (error) {
+        const errorCode = error.code || '';
+        const errorMsg = error.message || '';
+        
+        // PGRST116 = JWT claim check failed (RLS policy issue)
+        // Check for common RLS-related errors
+        if (errorCode === 'PGRST116' || 
+            errorMsg.includes('row-level security') ||
+            errorMsg.includes('policy') ||
+            errorMsg.includes('permission denied')) {
+          // This is an RLS/permission error, not a "user not in table" error
+          throw new Error(`Admin permission check failed: ${errorMsg}. Please contact support if you believe you should have admin access.`);
+        }
+        
+        // For "not found" errors (PGRST116 with "0 rows"), treat as not admin
+        if (errorCode === 'PGRST116' && errorMsg.includes('0 rows')) {
+          isAdmin = false;
+          return false;
+        }
+        
+        // Network or other transient errors - retry if we have attempts left
+        if (errorMsg.includes('network') || errorMsg.includes('timeout') || errorMsg.includes('fetch') || errorMsg.includes('aborted')) {
+          lastError = error;
+          if (attempt < retries) {
+            // Wait before retry (exponential backoff)
+            await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+            continue; // Try again
+          }
+          // Out of retries
+          throw new Error(`Network error during admin check after ${retries + 1} attempts: ${errorMsg}. Please try again.`);
+        }
+        
+        // Unknown error - safer to treat as "not admin" but log it
+        console.error('Unexpected error in checkAdminStatus:', error);
+        isAdmin = false;
+        return false;
+      }
+      
+      // Success - no error, check if data exists
+      isAdmin = !!data;
+      return isAdmin;
+      
+    } catch (err) {
+      // If it's a thrown error (RLS, network after retries), re-throw
+      if (err instanceof Error && err.message.includes('permission check failed')) {
+        throw err;
+      }
+      if (err instanceof Error && err.message.includes('Network error during admin check after')) {
+        throw err;
+      }
+      
+      // Other caught errors - store and potentially retry
+      lastError = err;
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  
+  // If we got here, all retries failed
+  console.error('Admin check failed after retries:', lastError);
+  isAdmin = false;
+  return false;
 }
 
 function getCurrentUser() {
@@ -124,6 +208,62 @@ function getCurrentSession() {
 
 function getIsAdmin() {
   return isAdmin;
+}
+
+// Diagnostic function for troubleshooting admin access
+async function debugAdminStatus() {
+  console.group('🔍 Admin Status Debug Info');
+  
+  console.log('Current User:', currentUser ? {
+    id: currentUser.id,
+    email: currentUser.email,
+    role: currentUser.role
+  } : 'NOT LOGGED IN');
+  
+  console.log('Current isAdmin flag:', isAdmin);
+  
+  if (!currentUser) {
+    console.warn('❌ No user logged in - cannot check admin status');
+    console.groupEnd();
+    return { success: false, reason: 'Not logged in' };
+  }
+  
+  console.log('Attempting direct query to admin_users table...');
+  
+  try {
+    const { data, error } = await db
+      .from('admin_users')
+      .select('user_id, created_at')
+      .eq('user_id', currentUser.id)
+      .single();
+    
+    if (error) {
+      console.error('❌ Query failed:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+      
+      console.groupEnd();
+      return { success: false, error, reason: 'Query failed' };
+    }
+    
+    if (data) {
+      console.log('✅ User IS in admin_users table:', data);
+      console.groupEnd();
+      return { success: true, isAdmin: true, data };
+    } else {
+      console.log('❌ User NOT in admin_users table (data is null)');
+      console.groupEnd();
+      return { success: true, isAdmin: false };
+    }
+    
+  } catch (err) {
+    console.error('❌ Unexpected error:', err);
+    console.groupEnd();
+    return { success: false, error: err, reason: 'Exception thrown' };
+  }
 }
 
 async function signOut() {
@@ -725,6 +865,7 @@ window.storage = {
   getCurrentUser,
   getCurrentSession,
   getIsAdmin,
+  debugAdminStatus,
   signOut,
   signInWithPassword,
   changePassword,

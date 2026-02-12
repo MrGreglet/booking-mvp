@@ -79,7 +79,16 @@ async function handleAdminLogin(e) {
     
     if (!isAdmin) {
       await storage.signOut();
-      throw new Error('Admin access required - this email is not in the admin_users table');
+      
+      // Provide more specific error message based on what might have gone wrong
+      throw new Error('Admin access denied. This could mean:\n' +
+        '1. Your account is not in the admin_users table\n' +
+        '2. Row Level Security policies are blocking access\n' +
+        '3. There was a temporary network issue\n\n' +
+        'If you believe you should have admin access, please:\n' +
+        '- Verify your user ID is in the admin_users table\n' +
+        '- Check that RLS policies allow you to query your own admin status\n' +
+        '- Try refreshing the page and logging in again');
     }
     
     // Load data without re-initializing auth
