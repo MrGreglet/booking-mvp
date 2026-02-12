@@ -1164,17 +1164,23 @@ function openAdminBookingDetails(bookingId) {
   
   const declineBtn = document.getElementById('decline-detail-btn');
   if (declineBtn) {
-    declineBtn.onclick = async () => {
+    declineBtn.onclick = () => {
       closeSlidein();
-      await handleDeclineBooking(bookingId);
+      // Wait for close animation to complete before opening confirmation
+      setTimeout(() => {
+        handleDeclineBooking(bookingId);
+      }, 450);
     };
   }
   
   const cancelBtn = document.getElementById('cancel-detail-btn');
   if (cancelBtn) {
-    cancelBtn.onclick = async () => {
+    cancelBtn.onclick = () => {
       closeSlidein();
-      await handleCancelBooking(bookingId);
+      // Wait for close animation to complete before opening confirmation
+      setTimeout(() => {
+        handleCancelBooking(bookingId);
+      }, 450);
     };
   }
   
@@ -1272,42 +1278,129 @@ async function handleApproveBooking(bookingId) {
   }
 }
 
-async function handleDeclineBooking(bookingId) {
-  const notes = prompt('Reason for decline (optional):');
-  
-  try {
-    await storage.setBookingStatus(bookingId, 'declined', notes || '');
-    showToast('Booking declined', 'success');
-    
-    // Send decline email (non-blocking)
-    if (window.emailNotifications) {
-      window.emailNotifications.notifyBookingEmail('BOOKING_DECLINED', bookingId);
-    }
-    
-    updatePendingBadge();
-    renderBookingsPanel();
-  } catch (error) {
-    showToast(error.message || 'Failed to decline booking', 'error');
+function handleDeclineBooking(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
   }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">❌ Decline Booking</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p style="font-size: 1.05rem; margin-bottom: 1rem;">Decline this booking request?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>User:</strong> ${booking.userEmail}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+    </div>
+  </div>`;
+  html += `<div class="form-group">
+    <label for="decline-notes">Reason for decline (optional - will be sent to user):</label>
+    <textarea id="decline-notes" rows="3" placeholder="e.g., Time slot no longer available..." style="width: 100%; padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-main); resize: vertical;"></textarea>
+  </div>`;
+  html += `<div class="form-actions" style="margin-top: 1.5rem;">
+    <button type="button" class="danger" id="confirm-decline-btn">Decline Booking</button>
+    <button type="button" class="secondary" id="cancel-decline-btn">Go Back</button>
+  </div>`;
+  
+  openSlidein(html);
+  
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const cancelBtn = panel.querySelector('#cancel-decline-btn');
+    const confirmBtn = panel.querySelector('#confirm-decline-btn');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (cancelBtn) cancelBtn.onclick = closeSlidein;
+    if (confirmBtn) {
+      confirmBtn.onclick = async () => {
+        const notes = document.getElementById('decline-notes').value.trim();
+        
+        try {
+          await storage.setBookingStatus(bookingId, 'declined', notes || '');
+          showToast('Booking declined', 'success');
+          closeSlidein();
+          
+          // Send decline email (non-blocking)
+          if (window.emailNotifications) {
+            window.emailNotifications.notifyBookingEmail('BOOKING_DECLINED', bookingId);
+          }
+          
+          updatePendingBadge();
+          renderBookingsPanel();
+        } catch (error) {
+          showToast(error.message || 'Failed to decline booking', 'error');
+        }
+      };
+    }
+  }, 50);
 }
 
-async function handleCancelBooking(bookingId) {
-  const notes = prompt('Reason for cancellation (optional):');
-  
-  try {
-    await storage.setBookingStatus(bookingId, 'cancelled', notes || '');
-    showToast('Booking cancelled', 'success');
-    
-    // Send cancellation email (non-blocking)
-    if (window.emailNotifications) {
-      window.emailNotifications.notifyBookingEmail('BOOKING_CANCELLED', bookingId);
-    }
-    
-    updatePendingBadge();
-    renderBookingsPanel();
-  } catch (error) {
-    showToast(error.message || 'Failed to cancel booking', 'error');
+function handleCancelBooking(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
   }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2 style="color: var(--danger);">⚠️ Cancel Booking</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <p style="font-size: 1.05rem; margin-bottom: 1rem;">Cancel this approved booking?</p>
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>User:</strong> ${booking.userEmail}</p>
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Status:</strong> ${booking.status}</p>
+    </div>
+  </div>`;
+  html += `<div class="form-group">
+    <label for="cancel-notes">Reason for cancellation (optional - will be sent to user):</label>
+    <textarea id="cancel-notes" rows="3" placeholder="e.g., Facility maintenance required..." style="width: 100%; padding: 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--border-glass); background: var(--bg-input); color: var(--text-main); resize: vertical;"></textarea>
+  </div>`;
+  html += `<div class="form-actions" style="margin-top: 1.5rem;">
+    <button type="button" class="danger" id="confirm-cancel-booking-btn">Cancel Booking</button>
+    <button type="button" class="secondary" id="back-cancel-booking-btn">Go Back</button>
+  </div>`;
+  
+  openSlidein(html);
+  
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const backBtn = panel.querySelector('#back-cancel-booking-btn');
+    const confirmBtn = panel.querySelector('#confirm-cancel-booking-btn');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (backBtn) backBtn.onclick = closeSlidein;
+    if (confirmBtn) {
+      confirmBtn.onclick = async () => {
+        const notes = document.getElementById('cancel-notes').value.trim();
+        
+        try {
+          await storage.setBookingStatus(bookingId, 'cancelled', notes || '');
+          showToast('Booking cancelled', 'success');
+          closeSlidein();
+          
+          // Send cancellation email (non-blocking)
+          if (window.emailNotifications) {
+            window.emailNotifications.notifyBookingEmail('BOOKING_CANCELLED', bookingId);
+          }
+          
+          updatePendingBadge();
+          renderBookingsPanel();
+        } catch (error) {
+          showToast(error.message || 'Failed to cancel booking', 'error');
+        }
+      };
+    }
+  }, 50);
 }
 
 function confirmDeleteBooking(bookingId) {
