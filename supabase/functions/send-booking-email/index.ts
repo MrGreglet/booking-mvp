@@ -138,8 +138,28 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+    } else if (event === 'BOOKING_CANCELLED') {
+      // For BOOKING_CANCELLED: either booking owner (user cancel) or admin (admin cancel)
+      const isOwner = booking.user_id === callerId
+      
+      if (!isOwner) {
+        // Not owner, check if caller is admin
+        const { data: adminCheck, error: adminError } = await supabaseAdmin
+          .from('admin_users')
+          .select('user_id')
+          .eq('user_id', callerId)
+          .single()
+
+        if (adminError || !adminCheck) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'Only booking owner or admin can cancel bookings' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+      // If owner or admin, proceed
     } else {
-      // For APPROVED/DECLINED/CANCELLED, caller must be admin
+      // For APPROVED/DECLINED, caller must be admin
       const { data: adminCheck, error: adminError } = await supabaseAdmin
         .from('admin_users')
         .select('user_id')
