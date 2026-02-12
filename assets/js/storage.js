@@ -136,20 +136,24 @@ async function checkAdminStatus(retries = 2) {
         const errorCode = error.code || '';
         const errorMsg = error.message || '';
         
-        // PGRST116 = JWT claim check failed (RLS policy issue)
-        // Check for common RLS-related errors
-        if (errorCode === 'PGRST116' || 
-            errorMsg.includes('row-level security') ||
-            errorMsg.includes('policy') ||
-            errorMsg.includes('permission denied')) {
-          // This is an RLS/permission error, not a "user not in table" error
-          throw new Error(`Admin permission check failed: ${errorMsg}. Please contact support if you believe you should have admin access.`);
-        }
-        
-        // For "not found" errors (PGRST116 with "0 rows"), treat as not admin
-        if (errorCode === 'PGRST116' && errorMsg.includes('0 rows')) {
+        // Handle "not found" cases first (user simply not in admin_users table)
+        // Supabase returns PGRST116 for .single() with 0 or multiple rows
+        if (errorCode === 'PGRST116' && 
+            (errorMsg.includes('0 rows') || 
+             errorMsg.includes('multiple (or no) rows') ||
+             errorMsg.includes('JSON object requested'))) {
+          // User is not in admin_users table - this is NORMAL for regular users
           isAdmin = false;
           return false;
+        }
+        
+        // Now check for actual RLS/permission errors (policy blocks, etc.)
+        if (errorMsg.includes('row-level security') ||
+            errorMsg.includes('policy') ||
+            errorMsg.includes('permission denied') ||
+            (errorCode === 'PGRST116' && !errorMsg.includes('rows'))) {
+          // This is an RLS/permission error, not a "user not in table" error
+          throw new Error(`Admin permission check failed: ${errorMsg}. Please contact support if you believe you should have admin access.`);
         }
         
         // Network or other transient errors - retry if we have attempts left
