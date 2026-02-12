@@ -138,20 +138,22 @@ async function checkAdminStatus(retries = 2) {
         
         // Handle "not found" cases first (user simply not in admin_users table)
         // Supabase returns PGRST116 for .single() with 0 or multiple rows
-        if (errorCode === 'PGRST116' && 
-            (errorMsg.includes('0 rows') || 
-             errorMsg.includes('multiple (or no) rows') ||
-             errorMsg.includes('JSON object requested'))) {
+        // Common messages: "0 rows", "multiple (or no) rows", "JSON object requested, multiple (or no) rows returned"
+        if (errorCode === 'PGRST116' || 
+            errorMsg.includes('JSON object') || 
+            errorMsg.includes('0 rows') || 
+            errorMsg.includes('multiple (or no) rows')) {
           // User is not in admin_users table - this is NORMAL for regular users
           isAdmin = false;
           return false;
         }
         
         // Now check for actual RLS/permission errors (policy blocks, etc.)
+        // These are actual security issues, not "user not found"
         if (errorMsg.includes('row-level security') ||
+            errorMsg.includes('infinite recursion') ||
             errorMsg.includes('policy') ||
-            errorMsg.includes('permission denied') ||
-            (errorCode === 'PGRST116' && !errorMsg.includes('rows'))) {
+            errorMsg.includes('permission denied')) {
           // This is an RLS/permission error, not a "user not in table" error
           throw new Error(`Admin permission check failed: ${errorMsg}. Please contact support if you believe you should have admin access.`);
         }
