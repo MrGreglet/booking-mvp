@@ -10,7 +10,7 @@ window.CONFIG = window.CONFIG || {
   branding: {
     appName: 'Studio94',
     appNameAdmin: 'Studio94 Admin',
-    supportEmail: 'support@example.com'
+    supportEmail: 'gregboot@gmail.com'  // Update this to your actual support email
   },
   supabase: {
     url: 'https://qkjcqtsacuspfdslgfxj.supabase.co',
