@@ -245,12 +245,20 @@ function openPasswordChangePanel() {
   html += `</form>`;
   
   openSlidein(html);
-  const closeBtn = panel?.querySelector('.close-btn');
-  if (closeBtn) closeBtn.style.display = 'none';
   
-  // Handle form submit
-  const form = document.getElementById('password-change-form');
-  form.onsubmit = async (e) => {
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    if (closeBtn) closeBtn.style.display = 'none';
+    
+    // Handle form submit
+    const form = panel.querySelector('#password-change-form');
+    if (!form) return;
+    
+    form.onsubmit = async (e) => {
     e.preventDefault();
     
     const newPassword = document.getElementById('new-password').value;
@@ -283,6 +291,7 @@ function openPasswordChangePanel() {
       submitBtn.textContent = 'Change Password';
     }
   };
+  }, 50);
 }
 
 // ============================================================
@@ -312,24 +321,47 @@ function openMyBookingsPanel() {
         <span class="status status-${statusClass}">${b.status}</span>
         ${b.userNotes ? `<div class="notes">Note: ${b.userNotes}</div>` : ''}
         ${b.adminNotes ? `<div class="admin-notes">Admin: ${b.adminNotes}</div>` : ''}
-        ${b.status === 'pending' ? `<button class="cancel-booking-btn" data-id="${b.id}">Cancel</button>` : ''}
+        ${b.status === 'pending' ? `<button type="button" class="cancel-booking-btn" data-id="${b.id}">Cancel</button>` : ''}
       </li>`;
     }
     html += `</ul>`;
   }
   
   openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
   
-  document.querySelectorAll('.cancel-booking-btn').forEach(btn => {
-    btn.onclick = () => confirmCancelBooking(btn.getAttribute('data-id'));
-  });
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    
+    panel.querySelectorAll('.cancel-booking-btn').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSlidein();
+        // Wait for close animation AND content clear to complete before opening confirmation
+        setTimeout(() => {
+          confirmCancelBooking(btn.getAttribute('data-id'));
+        }, 450);
+      };
+    });
+  }, 50);
 }
 
 function confirmCancelBooking(bookingId) {
   const booking = storage.getBookings().find(b => b.id === bookingId);
   if (!booking) {
     showToast('Booking not found', 'error');
+    return;
+  }
+  
+  // Check if booking is in the past
+  const isPast = new Date(booking.endISO) < new Date();
+  if (isPast) {
+    showToast('Cannot cancel past bookings', 'error');
     return;
   }
   
@@ -345,26 +377,154 @@ function confirmCancelBooking(bookingId) {
     <p style="color: var(--text-muted);">You can request a new booking anytime.</p>
   </div>`;
   html += `<div class="form-actions">
-    <button class="danger" id="confirm-cancel-btn">Yes, Cancel Booking</button>
-    <button class="secondary" id="back-cancel-btn">Go Back</button>
+    <button type="button" class="danger" id="confirm-cancel-btn">Yes, Cancel Booking</button>
+    <button type="button" class="secondary" id="back-cancel-btn">Go Back</button>
   </div>`;
   
   openSlidein(html);
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.getElementById('back-cancel-btn').onclick = () => {
-    closeSlidein();
-    openMyBookingsPanel();
-  };
-  document.getElementById('confirm-cancel-btn').onclick = async () => {
-    try {
-      await storage.cancelBooking(bookingId);
-      showToast('Booking cancelled', 'success');
-      closeSlidein();
-      renderCalendar();
-    } catch (error) {
-      showToast(error.message || 'Failed to cancel booking', 'error');
+  
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const backBtn = panel.querySelector('#back-cancel-btn');
+    const confirmBtn = panel.querySelector('#confirm-cancel-btn');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (backBtn) backBtn.onclick = closeSlidein;
+    if (confirmBtn) {
+      confirmBtn.onclick = async () => {
+        try {
+          await storage.cancelBooking(bookingId);
+          showToast('Booking cancelled', 'success');
+          closeSlidein();
+          renderCalendar();
+          renderMyBookingsList();
+          
+          // Send email notification (non-blocking)
+          if (window.emailNotifications && typeof window.emailNotifications.notifyBookingEmail === 'function') {
+            window.emailNotifications.notifyBookingEmail('BOOKING_CANCELLED', bookingId);
+          }
+        } catch (error) {
+          showToast(error.message || 'Failed to cancel booking', 'error');
+        }
+      };
     }
-  };
+  }, 50);
+}
+
+// ============================================================
+// MY BOOKING DETAILS SLIDE-OUT (from calendar click)
+// ============================================================
+
+function openMyBookingDetails(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  const isPast = new Date(booking.endISO) < new Date();
+  const canCancel = (booking.status === 'pending' || booking.status === 'approved') && !isPast;
+  
+  const statusClass = booking.status === 'approved' ? 'approved' :
+                     booking.status === 'declined' ? 'declined' :
+                     booking.status === 'cancelled' ? 'cancelled' : 'pending';
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Booking Details</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Duration:</strong> ${booking.durationMinutes} minutes</p>
+      <p style="margin: 0.5rem 0;">
+        <strong>Status:</strong> 
+        <span class="booking-status status-${statusClass}" style="margin-left: 0.5rem;">${booking.status}</span>
+      </p>
+      ${booking.userNotes ? `<p style="margin: 0.5rem 0;"><strong>Your Notes:</strong> ${booking.userNotes}</p>` : ''}
+      ${booking.adminNotes ? `<p style="margin: 0.5rem 0;"><strong>Admin Notes:</strong> ${booking.adminNotes}</p>` : ''}
+    </div>
+  </div>`;
+  
+  if (canCancel) {
+    html += `<div class="form-actions">
+      <button type="button" class="danger" id="cancel-from-details-btn">Cancel Booking</button>
+      <button type="button" class="secondary" id="close-details-btn">Close</button>
+    </div>`;
+  } else {
+    html += `<div class="form-actions">
+      <button type="button" class="secondary" id="close-details-btn">Close</button>
+    </div>`;
+  }
+  
+  openSlidein(html);
+  
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const closeDetailsBtn = panel.querySelector('#close-details-btn');
+    const cancelFromDetailsBtn = panel.querySelector('#cancel-from-details-btn');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (closeDetailsBtn) closeDetailsBtn.onclick = closeSlidein;
+    
+    if (canCancel && cancelFromDetailsBtn) {
+      cancelFromDetailsBtn.onclick = () => {
+        closeSlidein();
+        // Wait for close animation AND content clear to complete before opening confirmation
+        setTimeout(() => {
+          confirmCancelBooking(bookingId);
+        }, 450);
+      };
+    }
+  }, 50);
+}
+
+// ============================================================
+// BUSY SLOT DETAILS SLIDE-OUT (someone else's booking)
+// ============================================================
+
+function openBusySlotDetails(bookingId) {
+  const booking = storage.getBookings().find(b => b.id === bookingId);
+  if (!booking) {
+    showToast('Booking not found', 'error');
+    return;
+  }
+  
+  let html = `<button class="close-btn" aria-label="Close">×</button>`;
+  html += `<h2>Booking Details</h2>`;
+  html += `<div style="margin: 1.5rem 0;">
+    <div style="background: rgba(255, 255, 255, 0.05); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem;">
+      <p style="margin: 0.5rem 0;"><strong>Date:</strong> ${formatDateDDMMYY(new Date(booking.startISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Time:</strong> ${formatTimeHM(new Date(booking.startISO))} - ${formatTimeHM(new Date(booking.endISO))}</p>
+      <p style="margin: 0.5rem 0;"><strong>Duration:</strong> ${booking.durationMinutes} minutes</p>
+      <p style="margin: 0.5rem 0;"><strong>Status:</strong> <span style="color: var(--text-muted);">Busy</span></p>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">This time slot is already booked. Please select a different time.</p>
+  </div>`;
+  html += `<div class="form-actions">
+    <button type="button" class="secondary" id="close-details-btn">Close</button>
+  </div>`;
+  
+  openSlidein(html);
+  
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const closeDetailsBtn = panel.querySelector('#close-details-btn');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (closeDetailsBtn) closeDetailsBtn.onclick = closeSlidein;
+  }, 50);
 }
 
 // ============================================================
@@ -457,15 +617,17 @@ function renderCalendar() {
           } else if (myBooking.status === 'declined') {
             slotClass = 'slot-cell my-declined'; // Red
           }
+          slotData = `data-date="${slotISO}" data-booking-id="${myBooking.id}"`;
         } else {
           // Check if someone else has an approved booking (blocks the slot)
           const othersApprovedBooking = slotBookings.find(b => b.status === 'approved');
           if (othersApprovedBooking) {
             slotClass = 'slot-cell booked'; // Gray - slot is blocked
+            slotData = `data-date="${slotISO}" data-booking-id="${othersApprovedBooking.id}" data-busy="true"`;
+          } else {
+            slotData = `data-date="${slotISO}"`;
           }
         }
-        
-        slotData = `data-date="${slotISO}"`;
       }
       
       html += `<div class="${slotClass}" ${slotData}></div>`;
@@ -477,10 +639,20 @@ function renderCalendar() {
   html += '</div>';
   grid.innerHTML = html;
   
-  // Bind click events only to available slots
+  // Bind click events to available slots
   if (currentUser) {
     document.querySelectorAll('.slot-cell.available[data-date]').forEach(cell => {
       cell.onclick = () => openBookingPanel(cell.getAttribute('data-date'));
+    });
+    
+    // Bind click events to user's own booking slots
+    document.querySelectorAll('.slot-cell[data-booking-id]:not([data-busy])').forEach(cell => {
+      cell.onclick = () => openMyBookingDetails(cell.getAttribute('data-booking-id'));
+    });
+    
+    // Bind click events to busy slots (someone else's booking)
+    document.querySelectorAll('.slot-cell.booked[data-booking-id][data-busy]').forEach(cell => {
+      cell.onclick = () => openBusySlotDetails(cell.getAttribute('data-booking-id'));
     });
   }
   
@@ -512,23 +684,31 @@ function renderMyBookingsList() {
     return;
   }
   
+  const now = new Date();
+  
   let html = '<ul class="bookings-list">';
   for (const b of bookings) {
     const statusClass = b.status === 'approved' ? 'approved' :
                        b.status === 'declined' ? 'declined' :
                        b.status === 'cancelled' ? 'cancelled' : 'pending';
+    const isPast = new Date(b.endISO) < now;
+    const canCancel = (b.status === 'pending' || b.status === 'approved') && !isPast;
     html += `<li class="booking-item status-${statusClass}">
       <span class="booking-date">${formatDateDDMMYY(new Date(b.startISO))}</span>
       <span class="booking-time">${formatTimeHM(new Date(b.startISO))}–${formatTimeHM(new Date(b.endISO))}</span>
       <span class="booking-status status-${statusClass}">${b.status}</span>
-      ${b.status === 'pending' ? `<button class="cancel-booking-btn small" data-id="${b.id}">Cancel</button>` : ''}
+      ${canCancel ? `<button type="button" class="action-btn danger small cancel-booking-btn" data-id="${b.id}">Cancel</button>` : ''}
     </li>`;
   }
   html += '</ul>';
   listEl.innerHTML = html;
   
   listEl.querySelectorAll('.cancel-booking-btn').forEach(btn => {
-    btn.onclick = () => confirmCancelBooking(btn.getAttribute('data-id'));
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      confirmCancelBooking(btn.getAttribute('data-id'));
+    };
   });
 }
 
@@ -576,9 +756,19 @@ function openBookingPanel(startISO) {
   
   openSlidein(html);
   
-  document.querySelector('.close-btn').onclick = closeSlidein;
-  document.getElementById('cancel-booking-form').onclick = closeSlidein;
-  document.getElementById('booking-form').onsubmit = (e) => submitBookingRequest(e, startISO);
+  // Use setTimeout to ensure DOM is fully updated before binding handlers
+  setTimeout(() => {
+    const panel = document.getElementById('slidein-panel');
+    if (!panel) return;
+    
+    const closeBtn = panel.querySelector('.close-btn');
+    const cancelBtn = panel.querySelector('#cancel-booking-form');
+    const form = panel.querySelector('#booking-form');
+    
+    if (closeBtn) closeBtn.onclick = closeSlidein;
+    if (cancelBtn) cancelBtn.onclick = closeSlidein;
+    if (form) form.onsubmit = (e) => submitBookingRequest(e, startISO);
+  }, 50);
 }
 
 async function submitBookingRequest(e, startISO) {

@@ -107,7 +107,11 @@ booking-mvp/
 ├── admin.html                              # Admin dashboard
 ├── auth.html                               # Password reset page
 ├── README.md                               # Project overview
-├── TEST_PLAN.md                            # Comprehensive test plan
+├── docs/
+│   ├── DEPLOYMENT.md                       # Deployment guide
+│   ├── DEPLOY_READY.md                     # Deployment changelog
+│   ├── INVITE_SYSTEM_IMPLEMENTATION.md     # Invite system details
+│   └── TEST_PLAN.md                        # Comprehensive test plan
 ├── assets/
 │   ├── css/
 │   │   └── styles.css                      # Glassmorphism dark theme
@@ -170,7 +174,7 @@ booking-mvp/
 
 ## Testing
 
-**See [`TEST_PLAN.md`](TEST_PLAN.md) for comprehensive test scenarios.**
+**See [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) for comprehensive test scenarios.**
 
 ### Critical Tests
 
@@ -404,7 +408,7 @@ console.log('Result:', data, error);
 
 For issues or questions:
 1. Check `DEPLOYMENT.md` for setup help
-2. Review `TEST_PLAN.md` for expected behavior
+2. Review `docs/TEST_PLAN.md` for expected behavior
 3. Check Supabase logs for backend errors
 4. Check browser console for frontend errors
 

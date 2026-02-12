@@ -116,8 +116,6 @@ async function init() {
   const flowType = params.type; // 'invite', 'recovery', 'signup', etc.
   const hasTokens = params.access_token || params.refresh_token;
   
-  console.log('Auth flow detected:', { type: flowType, hasTokens });
-  
   // If no auth params at all, check if already logged in
   if (!flowType && !hasTokens) {
     try {
@@ -126,7 +124,6 @@ async function init() {
       
       if (user) {
         // Already logged in, redirect to main app
-        console.log('User already authenticated, redirecting...');
         window.location.href = 'index.html';
         return;
       }
@@ -155,8 +152,6 @@ async function init() {
         return;
       }
       
-      console.log('Session established for user:', session.user.email);
-      
       // Show password form
       if (flowType === 'invite') {
         document.getElementById('form-title').textContent = 'Welcome! Set Your Password';
@@ -183,7 +178,6 @@ async function init() {
       const { data: { session } } = await db.auth.getSession();
       
       if (session) {
-        console.log('Session established, redirecting to app...');
         window.location.href = 'index.html';
       } else {
         showError('Unable to establish session. Please try again.');

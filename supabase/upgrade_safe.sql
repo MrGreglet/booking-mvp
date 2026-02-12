@@ -272,7 +272,7 @@ CREATE POLICY "Users can create booking requests"
 
 CREATE POLICY "Users can cancel own pending bookings"
   ON bookings FOR UPDATE
-  USING (auth.uid() = user_id AND status = 'pending')
+  USING (auth.uid() = user_id AND status IN ('pending', 'approved'))
   WITH CHECK (auth.uid() = user_id AND status = 'cancelled');
 
 CREATE POLICY "Admins can update all bookings"

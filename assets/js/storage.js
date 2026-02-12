@@ -204,7 +204,6 @@ async function markPasswordChanged() {
 
 // Listen for auth state changes
 db.auth.onAuthStateChange(async (event, session) => {
-  console.log('Auth state changed:', event);
   try {
     if (event === 'SIGNED_IN' && session) {
       currentSession = session;
@@ -432,14 +431,31 @@ async function requestBooking(startISO, endISO, userNotes = '') {
   return data;
 }
 
-// Cancel own booking (users can only cancel pending bookings)
+// Cancel own booking (users can cancel pending or approved bookings)
 async function cancelBooking(bookingId) {
+  // First check the booking exists and belongs to user
+  const booking = cachedBookings.find(b => b.id === bookingId && b.userId === currentUser.id);
+  if (!booking) {
+    throw new Error('Booking not found or access denied');
+  }
+  
+  // Only allow cancelling pending or approved bookings
+  if (booking.status !== 'pending' && booking.status !== 'approved') {
+    throw new Error(`Cannot cancel ${booking.status} booking`);
+  }
+  
+  // Prevent cancelling past bookings
+  const isPast = new Date(booking.endISO) < new Date();
+  if (isPast) {
+    throw new Error('Cannot cancel past bookings');
+  }
+  
   const { error } = await db
     .from('bookings')
     .update({ status: 'cancelled' })
     .eq('id', bookingId)
     .eq('user_id', currentUser.id)
-    .eq('status', 'pending');
+    .in('status', ['pending', 'approved']);
   
   if (error) {
     console.error('Error cancelling booking:', error);

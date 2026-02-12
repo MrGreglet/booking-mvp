@@ -61,8 +61,6 @@ async function handleAdminLogin(e) {
   statusEl.textContent = '';
   errorEl.textContent = '';
   
-  console.log('Attempting login for:', email);
-  
   try {
     // Sign in
     const result = await storage.signInWithPassword(email, password);
@@ -83,8 +81,6 @@ async function handleAdminLogin(e) {
       await storage.signOut();
       throw new Error('Admin access required - this email is not in the admin_users table');
     }
-    
-    console.log('Admin verified, loading data...');
     
     // Load data without re-initializing auth
     try {
@@ -111,8 +107,6 @@ async function handleAdminLogin(e) {
       console.warn('Could not load allowed users');
     }
     
-    console.log('Data loaded successfully');
-    
     // Admin verified - NOW update UI
     const loginPanel = document.getElementById('admin-login');
     const appPanel = document.getElementById('admin-app');
@@ -124,6 +118,17 @@ async function handleAdminLogin(e) {
       btn.onclick = () => switchPanel(btn.getAttribute('data-panel'));
     });
     document.getElementById('logout-btn').onclick = handleLogout;
+    
+    // Update pending badge immediately
+    updatePendingBadge();
+    
+    // Make pending badge clickable
+    const pendingBadge = document.getElementById('pending-badge');
+    if (pendingBadge) {
+      pendingBadge.style.cursor = 'pointer';
+      pendingBadge.onclick = () => switchPanel('bookings');
+    }
+    
     switchPanel('invites');
     
   } catch (error) {
@@ -148,6 +153,19 @@ async function handleLogout() {
   location.reload();
 }
 
+
+// ============================================================
+// PENDING BADGE UPDATE
+// ============================================================
+
+function updatePendingBadge() {
+  const allBookings = storage.getBookings();
+  const pendingCount = allBookings.filter(b => b.status === 'pending').length;
+  const badge = document.getElementById('pending-badge');
+  if (badge) {
+    badge.textContent = pendingCount;
+  }
+}
 
 // ============================================================
 // PANEL NAVIGATION
@@ -284,7 +302,13 @@ async function handleInviteUserInline(e) {
     showToast(`Invite sent to ${email}. They will receive an email to set their password.`, 'success');
     
   } catch (error) {
-    const errorMsg = error.message || 'Failed to send invite';
+    let errorMsg = error.message || 'Failed to send invite';
+    
+    // Provide helpful message for "user already exists" error
+    if (errorMsg.includes('User already exists') || errorMsg.includes('already registered')) {
+      errorMsg = 'This email is already registered. If you previously deleted this user, you must permanently delete them from Supabase Dashboard > Authentication > Users first.';
+    }
+    
     showToast(errorMsg, 'error');
     if (submitBtn) {
       submitBtn.disabled = false;
@@ -455,6 +479,73 @@ let adminCurrentWeekStart = getWeekStart(new Date());
 // Track whether to show past bookings
 let showPastBookings = false;
 
+// Bookings list filters
+let bookingsFilters = {
+  status: 'all', // 'all' | 'pending' | 'approved' | 'declined' | 'cancelled'
+  dateFrom: '',
+  dateTo: '',
+  search: '',
+  sortUpcoming: false // false = newest first, true = upcoming first
+};
+let searchDebounceTimer = null;
+
+// Filter and sort bookings based on current filters
+function filterBookings(bookings) {
+  let filtered = [...bookings];
+  
+  // Status filter
+  if (bookingsFilters.status !== 'all') {
+    filtered = filtered.filter(b => b.status === bookingsFilters.status);
+  }
+  
+  // Date range filter
+  if (bookingsFilters.dateFrom) {
+    const fromDate = new Date(bookingsFilters.dateFrom);
+    fromDate.setHours(0, 0, 0, 0);
+    filtered = filtered.filter(b => new Date(b.startISO) >= fromDate);
+  }
+  if (bookingsFilters.dateTo) {
+    const toDate = new Date(bookingsFilters.dateTo);
+    toDate.setHours(23, 59, 59, 999);
+    filtered = filtered.filter(b => new Date(b.startISO) <= toDate);
+  }
+  
+  // Search filter (matches user email, user notes, admin notes)
+  if (bookingsFilters.search) {
+    const searchLower = bookingsFilters.search.toLowerCase();
+    filtered = filtered.filter(b => {
+      return (
+        (b.userEmail && b.userEmail.toLowerCase().includes(searchLower)) ||
+        (b.userNotes && b.userNotes.toLowerCase().includes(searchLower)) ||
+        (b.adminNotes && b.adminNotes.toLowerCase().includes(searchLower))
+      );
+    });
+  }
+  
+  // Sort
+  const now = new Date();
+  if (bookingsFilters.sortUpcoming) {
+    // Upcoming first: pending + future bookings first, sorted by date ascending
+    filtered.sort((a, b) => {
+      const aStart = new Date(a.startISO);
+      const bStart = new Date(b.startISO);
+      const aIsFuture = aStart >= now;
+      const bIsFuture = bStart >= now;
+      
+      if (aIsFuture && !bIsFuture) return -1;
+      if (!aIsFuture && bIsFuture) return 1;
+      
+      // Both future or both past: sort by date ascending (earliest first)
+      return aStart - bStart;
+    });
+  } else {
+    // Newest first: sort by date descending
+    filtered.sort((a, b) => new Date(b.startISO) - new Date(a.startISO));
+  }
+  
+  return filtered;
+}
+
 function renderBookingsPanel() {
   const panel = document.getElementById('admin-panel-bookings');
   const now = new Date();
@@ -478,12 +569,15 @@ function renderBookingsPanel() {
     return aDiff - bDiff;
   });
   
-  // Split into upcoming and past
-  const upcomingBookings = allBookings.filter(b => new Date(b.startISO) >= now);
-  const pastBookings = allBookings.filter(b => new Date(b.startISO) < now);
+  // Apply filters to all bookings
+  const filteredBookings = filterBookings(allBookings);
+  
+  // Split filtered bookings into upcoming and past
+  const upcomingBookings = filteredBookings.filter(b => new Date(b.startISO) >= now);
+  const pastBookings = filteredBookings.filter(b => new Date(b.startISO) < now);
   
   // Determine which bookings to show
-  const bookingsToShow = showPastBookings ? allBookings : upcomingBookings;
+  const bookingsToShow = showPastBookings ? filteredBookings : upcomingBookings;
   const pendingCount = allBookings.filter(b => b.status === 'pending').length;
   
   // Update badge
@@ -508,90 +602,182 @@ function renderBookingsPanel() {
       </div>
     </div>
     
-    <!-- Bookings Table Below -->
-    <div class="panel-header" style="margin-top: 2rem; display: flex; justify-content: space-between; align-items: center;">
-      <h3>Bookings List (${upcomingBookings.length} upcoming${pastBookings.length > 0 ? `, ${pastBookings.length} past` : ''})</h3>
-      ${pastBookings.length > 0 ? `
-        <button class="secondary" id="toggle-past-bookings-btn" style="font-size: 0.9rem;">
-          ${showPastBookings ? 'Hide Past Bookings' : 'Show Past Bookings'}
+    <!-- Bookings List Section -->
+    <div class="panel-header" style="margin-top: 2rem; margin-bottom: 1rem;">
+      <h3>All Bookings</h3>
+      <span class="info-text">${filteredBookings.length} ${filteredBookings.length === 1 ? 'booking' : 'bookings'} found</span>
+    </div>
+    
+    <!-- Filters -->
+    <div class="bookings-filters">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label for="filter-status">Status</label>
+          <select id="filter-status" class="filter-input">
+            <option value="all" ${bookingsFilters.status === 'all' ? 'selected' : ''}>All</option>
+            <option value="pending" ${bookingsFilters.status === 'pending' ? 'selected' : ''}>Pending</option>
+            <option value="approved" ${bookingsFilters.status === 'approved' ? 'selected' : ''}>Approved</option>
+            <option value="declined" ${bookingsFilters.status === 'declined' ? 'selected' : ''}>Declined</option>
+            <option value="cancelled" ${bookingsFilters.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label for="filter-date-from">From</label>
+          <input type="date" id="filter-date-from" class="filter-input" value="${bookingsFilters.dateFrom}">
+        </div>
+        
+        <div class="filter-group">
+          <label for="filter-date-to">To</label>
+          <input type="date" id="filter-date-to" class="filter-input" value="${bookingsFilters.dateTo}">
+        </div>
+        
+        <div class="filter-group filter-search">
+          <label for="filter-search">Search</label>
+          <input type="text" id="filter-search" class="filter-input" placeholder="Email or notes..." value="${bookingsFilters.search}">
+        </div>
+        
+        <div class="filter-group filter-actions">
+          <label>&nbsp;</label>
+          <button id="filter-clear-btn" class="secondary" style="white-space: nowrap;">Clear Filters</button>
+        </div>
+      </div>
+      
+      <div class="filter-row" style="justify-content: space-between; align-items: center;">
+        <button id="toggle-sort-btn" class="secondary" style="font-size: 0.9rem;">
+          ${bookingsFilters.sortUpcoming ? '📅 Upcoming First' : '🕐 Newest First'}
         </button>
-      ` : ''}
+        ${pastBookings.length > 0 ? `
+          <button class="secondary" id="toggle-past-bookings-btn" style="font-size: 0.9rem;">
+            ${showPastBookings ? 'Hide Past' : 'Show Past'}
+          </button>
+        ` : ''}
+      </div>
     </div>
   `;
   
   if (bookingsToShow.length === 0) {
     html += `<div style="padding: 2rem; text-align: center; color: var(--text-muted);">
-      ${showPastBookings ? 'No bookings found.' : 'No upcoming bookings.'}
+      No bookings found matching your filters.
     </div>`;
   } else {
+    // Desktop table view
     html += `
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Date & Time</th>
-            <th>User</th>
-            <th>Duration</th>
-            <th>Status</th>
-            <th>Notes</th>
-            <th>Actions</th>
+      <div class="bookings-table-wrapper">
+        <table class="table bookings-table-desktop">
+          <thead>
+            <tr>
+              <th>Date & Time</th>
+              <th>User</th>
+              <th>Duration</th>
+              <th>Status</th>
+              <th>Notes</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      for (const booking of bookingsToShow) {
+        const start = new Date(booking.startISO);
+        const end = new Date(booking.endISO);
+        const isPast = start < now;
+        const statusClass = booking.status === 'approved' ? 'badge-success' :
+                           booking.status === 'declined' ? 'badge-danger' :
+                           booking.status === 'cancelled' ? 'badge-secondary' : 'badge-warning';
+        
+        html += `
+          <tr ${isPast ? 'style="opacity: 0.6;"' : ''}>
+            <td data-label="Date & Time">
+              <b>${formatDateDDMMYY(start)}</b><br>
+              ${formatTimeHM(start)} - ${formatTimeHM(end)}
+              ${isPast ? '<span style="color: var(--text-muted); font-size: 0.8rem;"> (past)</span>' : ''}
+            </td>
+            <td data-label="User">${booking.userEmail}</td>
+            <td data-label="Duration">${booking.durationMinutes} min</td>
+            <td data-label="Status"><span class="badge ${statusClass}">${booking.status}</span></td>
+            <td data-label="Notes">
+              ${booking.userNotes ? `<div style="font-size: 0.85rem;">User: ${booking.userNotes}</div>` : ''}
+              ${booking.adminNotes ? `<div style="font-size: 0.85rem; color: var(--primary);">Admin: ${booking.adminNotes}</div>` : ''}
+              ${!booking.userNotes && !booking.adminNotes ? '<span style="color: var(--text-muted);">—</span>' : ''}
+            </td>
+            <td data-label="Actions" class="actions-cell">
+              <button class="action-btn secondary view-btn" data-id="${booking.id}">View</button>
+              ${booking.status === 'pending' && !isPast ? `
+                <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
+                <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
+              ` : booking.status === 'approved' && !isPast ? `
+                <button class="action-btn danger cancel-booking-btn" data-id="${booking.id}">Cancel</button>
+              ` : ''}
+              <button class="action-btn danger delete-btn" data-id="${booking.id}">Delete</button>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-    `;
-    
-    for (const booking of bookingsToShow) {
-      const start = new Date(booking.startISO);
-      const end = new Date(booking.endISO);
-      const isPast = start < now;
-      const statusClass = booking.status === 'approved' ? 'badge-success' :
-                         booking.status === 'declined' ? 'badge-danger' :
-                         booking.status === 'cancelled' ? 'badge-secondary' : 'badge-warning';
+        `;
+      }
       
       html += `
-        <tr ${isPast ? 'style="opacity: 0.6;"' : ''}>
-          <td>
-            <b>${formatDateDDMMYY(start)}</b><br>
-            ${formatTimeHM(start)} - ${formatTimeHM(end)}
-            ${isPast ? '<span style="color: var(--text-muted); font-size: 0.8rem;"> (past)</span>' : ''}
-          </td>
-          <td>${booking.userEmail}</td>
-          <td>${booking.durationMinutes} min</td>
-          <td><span class="badge ${statusClass}">${booking.status}</span></td>
-          <td>
-            ${booking.userNotes ? `<div style="font-size: 0.85rem;">User: ${booking.userNotes}</div>` : ''}
-            ${booking.adminNotes ? `<div style="font-size: 0.85rem; color: var(--primary);">Admin: ${booking.adminNotes}</div>` : ''}
-          </td>
-          <td>
-            <button class="action-btn secondary view-btn" data-id="${booking.id}">View</button>
-            ${booking.status === 'pending' && !isPast ? `
-              <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
-              <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
-            ` : booking.status === 'approved' && !isPast ? `
-              <button class="action-btn danger cancel-booking-btn" data-id="${booking.id}">Cancel</button>
-            ` : ''}
-            <button class="action-btn danger delete-btn" data-id="${booking.id}">Delete</button>
-          </td>
-        </tr>
+          </tbody>
+        </table>
+      </div>
+      
+      <!-- Mobile card view -->
+      <div class="bookings-cards-mobile">
       `;
-    }
-    
-    html += `</tbody></table>`;
+      
+      for (const booking of bookingsToShow) {
+        const start = new Date(booking.startISO);
+        const end = new Date(booking.endISO);
+        const isPast = start < now;
+        const statusClass = booking.status === 'approved' ? 'badge-success' :
+                           booking.status === 'declined' ? 'badge-danger' :
+                           booking.status === 'cancelled' ? 'badge-secondary' : 'badge-warning';
+        
+        html += `
+          <div class="booking-card ${isPast ? 'past' : ''}" data-id="${booking.id}">
+            <div class="booking-card-header">
+              <div>
+                <div class="booking-card-date">${formatDateDDMMYY(start)}</div>
+                <div class="booking-card-time">${formatTimeHM(start)} - ${formatTimeHM(end)}</div>
+              </div>
+              <span class="badge ${statusClass}">${booking.status}</span>
+            </div>
+            <div class="booking-card-body">
+              <div class="booking-card-row">
+                <span class="booking-card-label">User:</span>
+                <span>${booking.userEmail}</span>
+              </div>
+              <div class="booking-card-row">
+                <span class="booking-card-label">Duration:</span>
+                <span>${booking.durationMinutes} minutes</span>
+              </div>
+              ${booking.userNotes || booking.adminNotes ? `
+                <div class="booking-card-notes">
+                  ${booking.userNotes ? `<div><b>User:</b> ${booking.userNotes}</div>` : ''}
+                  ${booking.adminNotes ? `<div style="color: var(--primary);"><b>Admin:</b> ${booking.adminNotes}</div>` : ''}
+                </div>
+              ` : ''}
+            </div>
+            <div class="booking-card-actions">
+              <button class="action-btn secondary view-btn" data-id="${booking.id}">View</button>
+              ${booking.status === 'pending' && !isPast ? `
+                <button class="action-btn success approve-btn" data-id="${booking.id}">Approve</button>
+                <button class="action-btn danger decline-btn" data-id="${booking.id}">Decline</button>
+              ` : booking.status === 'approved' && !isPast ? `
+                <button class="action-btn danger cancel-booking-btn" data-id="${booking.id}">Cancel</button>
+              ` : ''}
+              <button class="action-btn danger delete-btn" data-id="${booking.id}">Delete</button>
+            </div>
+          </div>
+        `;
+      }
+      
+      html += `</div>`;
   }
   
   panel.innerHTML = html;
   
-  // If we have bookings, ensure calendar shows the week of the first upcoming one
-  if (upcomingBookings.length > 0) {
-    const firstBookingStart = new Date(upcomingBookings[0].startISO);
-    const bookingWeekStart = getWeekStart(firstBookingStart);
-    // Only switch week if current view doesn't include this booking
-    const weekEnd = new Date(adminCurrentWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
-    if (firstBookingStart < adminCurrentWeekStart || firstBookingStart > weekEnd) {
-      adminCurrentWeekStart = bookingWeekStart;
-    }
-  }
-  
-  // Render calendar
+  // Render calendar (keep current week - don't auto-jump to first booking)
+  // Admin can use navigation buttons to move to specific bookings
   renderAdminCalendar();
   
   // Setup calendar navigation
@@ -650,6 +836,63 @@ function renderBookingsPanel() {
   if (togglePastBtn) {
     togglePastBtn.onclick = () => {
       showPastBookings = !showPastBookings;
+      renderBookingsPanel();
+    };
+  }
+  
+  // Filter event handlers
+  const filterStatus = document.getElementById('filter-status');
+  const filterDateFrom = document.getElementById('filter-date-from');
+  const filterDateTo = document.getElementById('filter-date-to');
+  const filterSearch = document.getElementById('filter-search');
+  const filterClearBtn = document.getElementById('filter-clear-btn');
+  const toggleSortBtn = document.getElementById('toggle-sort-btn');
+  
+  if (filterStatus) {
+    filterStatus.onchange = () => {
+      bookingsFilters.status = filterStatus.value;
+      renderBookingsPanel();
+    };
+  }
+  
+  if (filterDateFrom) {
+    filterDateFrom.onchange = () => {
+      bookingsFilters.dateFrom = filterDateFrom.value;
+      renderBookingsPanel();
+    };
+  }
+  
+  if (filterDateTo) {
+    filterDateTo.onchange = () => {
+      bookingsFilters.dateTo = filterDateTo.value;
+      renderBookingsPanel();
+    };
+  }
+  
+  if (filterSearch) {
+    filterSearch.oninput = () => {
+      // Debounce search input
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        bookingsFilters.search = filterSearch.value.trim();
+        renderBookingsPanel();
+      }, 250);
+    };
+  }
+  
+  if (filterClearBtn) {
+    filterClearBtn.onclick = () => {
+      bookingsFilters.status = 'all';
+      bookingsFilters.dateFrom = '';
+      bookingsFilters.dateTo = '';
+      bookingsFilters.search = '';
+      renderBookingsPanel();
+    };
+  }
+  
+  if (toggleSortBtn) {
+    toggleSortBtn.onclick = () => {
+      bookingsFilters.sortUpcoming = !bookingsFilters.sortUpcoming;
       renderBookingsPanel();
     };
   }
@@ -1013,6 +1256,7 @@ async function handleApproveBooking(bookingId) {
       showToast('Booking approved', 'success');
     }
     
+    updatePendingBadge();
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to approve booking', 'error');
@@ -1031,6 +1275,7 @@ async function handleDeclineBooking(bookingId) {
       window.emailNotifications.notifyBookingEmail('BOOKING_DECLINED', bookingId);
     }
     
+    updatePendingBadge();
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to decline booking', 'error');
@@ -1049,6 +1294,7 @@ async function handleCancelBooking(bookingId) {
       window.emailNotifications.notifyBookingEmail('BOOKING_CANCELLED', bookingId);
     }
     
+    updatePendingBadge();
     renderBookingsPanel();
   } catch (error) {
     showToast(error.message || 'Failed to cancel booking', 'error');
@@ -1087,6 +1333,7 @@ function confirmDeleteBooking(bookingId) {
       await storage.deleteBooking(bookingId);
       showToast('Booking deleted', 'success');
       closeSlidein();
+      updatePendingBadge();
       renderBookingsPanel();
     } catch (error) {
       showToast(error.message || 'Failed to delete booking', 'error');
@@ -1164,6 +1411,7 @@ function openEditBookingForm(bookingId) {
       await storage.updateBooking(bookingId, { startISO, endISO, durationMinutes, userNotes, adminNotes });
       showToast('Booking updated', 'success');
       closeSlidein();
+      updatePendingBadge();
       renderBookingsPanel();
     } catch (error) {
       showToast(error.message || 'Failed to update booking', 'error');
@@ -1236,6 +1484,7 @@ function openCreateBookingForm(slotISO) {
       await storage.adminCreateBooking(startISO, endISO, clientName, userNotes, adminNotes);
       showToast('Booking created', 'success');
       closeSlidein();
+      updatePendingBadge();
       renderBookingsPanel();
     } catch (error) {
       showToast(error.message || 'Failed to create booking', 'error');
@@ -1344,6 +1593,16 @@ async function init() {
       
       // Bind logout
       document.getElementById('logout-btn').onclick = handleLogout;
+      
+      // Update pending badge immediately
+      updatePendingBadge();
+      
+      // Make pending badge clickable
+      const pendingBadge = document.getElementById('pending-badge');
+      if (pendingBadge) {
+        pendingBadge.style.cursor = 'pointer';
+        pendingBadge.onclick = () => switchPanel('bookings');
+      }
       
       // Render initial panel
       switchPanel(currentPanel);

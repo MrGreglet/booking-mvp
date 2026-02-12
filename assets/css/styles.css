@@ -404,10 +404,10 @@ body.admin-bg {
 
 /* Sticky wrapper: week selector + calendar table header stick together on scroll */
 .calendar-sticky-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  background: var(--bg-page);
+  /* Removed position: sticky - let controls scroll naturally */
+  /* Only day headers inside the grid should be sticky */
+  z-index: 10;
+  background: transparent;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   /* Horizontal swipe = change week (not grid scroll). Vertical = page scroll. */
   touch-action: pan-y;
@@ -511,6 +511,10 @@ body.admin-bg {
   min-width: 0;
   color: var(--text-main);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  /* Make day headers sticky when scrolling calendar */
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .day-header.today {
@@ -909,24 +913,9 @@ body.admin-bg {
 }
 
 .admin-calendar-grid .calendar-header {
-  background: rgba(30, 34, 38, 0.95);
-  backdrop-filter: blur(12px);
-  font-weight: 600;
-  text-align: center;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-glass);
-  border-right: 1px solid var(--border-glass);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  border-right: 1px solid var(--border-glass);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  grid-row: 1;
-  color: var(--text-main);
-  font-size: 0.9rem;
+  /* This wrapper has display: contents in the grid */
+  /* Individual .day-header children handle sticky positioning */
+  display: contents;
 }
 
 .admin-calendar-grid .time-col {
@@ -1219,8 +1208,9 @@ body.admin-bg {
     padding: 0 0.4rem 0.4rem 0.4rem;
   }
   #admin-calendar-container {
+    /* Removed max-height to prevent scroll trap */
+    /* Calendar should scroll with page, not create inner scroll container */
     min-height: 300px;
-    max-height: calc(100vh - 150px);
   }
   .user-bar .login-form {
     flex-direction: column;
@@ -1443,6 +1433,14 @@ body.admin-bg {
   font-size: 0.85rem;
   font-weight: 600;
   border: 1px solid rgba(255, 180, 71, 0.35);
+  transition: background 0.2s, transform 0.2s, border-color 0.2s;
+}
+
+#pending-badge:hover {
+  background: var(--accent);
+  color: #232526;
+  border-color: var(--accent);
+  transform: scale(1.05);
 }
 
 @keyframes fadein {
@@ -1769,6 +1767,17 @@ body.admin-bg {
   padding: 0.3rem 0.6rem;
   font-size: 0.8rem;
 }
+.bookings-list .cancel-booking-btn.danger {
+  background: var(--danger);
+  color: #fff;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.bookings-list .cancel-booking-btn.danger:hover {
+  background: #e05a5a;
+}
 
 /* --- Tables & admin nav --- */
 .table,
@@ -1905,7 +1914,9 @@ body.admin-bg {
 
 .table .action-btn,
 .table button,
-.nav-btn {
+.nav-btn,
+button.secondary,
+.secondary {
   background: var(--bg-glass-2);
   color: var(--text-main);
   border: 1px solid var(--border-glass);
@@ -1919,7 +1930,9 @@ body.admin-bg {
 
 .table .action-btn:hover,
 .table button:hover,
-.nav-btn:hover {
+.nav-btn:hover,
+button.secondary:hover,
+.secondary:hover {
   background: var(--accent);
   color: #232526;
   border-color: var(--accent);
@@ -1980,3 +1993,199 @@ body.admin-bg {
 
 .toast.success { border-left: 4px solid var(--success); }
 .toast.error { border-left: 4px solid var(--danger); }
+
+/* ========== BOOKINGS FILTERS ========== */
+.bookings-filters {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(10px);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.filter-row:not(:last-child) {
+  margin-bottom: 1rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 140px;
+  flex: 1;
+}
+
+.filter-group.filter-search {
+  flex: 2;
+  min-width: 200px;
+}
+
+.filter-group.filter-actions {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+
+.filter-group label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.filter-input {
+  background: var(--bg-glass-2);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-main);
+  font-size: 0.95rem;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg-glass);
+}
+
+.filter-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* ========== BOOKINGS TABLE / CARDS ========== */
+.bookings-table-wrapper {
+  overflow-x: auto;
+}
+
+.bookings-cards-mobile {
+  display: none;
+}
+
+/* Desktop: show table, hide cards */
+@media (min-width: 769px) {
+  .bookings-table-desktop {
+    display: table;
+  }
+  .bookings-cards-mobile {
+    display: none;
+  }
+}
+
+/* Mobile: hide table, show cards */
+@media (max-width: 768px) {
+  .bookings-table-desktop {
+    display: none;
+  }
+  
+  .bookings-cards-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .filter-group {
+    min-width: 100%;
+  }
+  
+  .filter-group.filter-actions {
+    min-width: 100%;
+  }
+}
+
+/* ========== BOOKING CARDS (MOBILE) ========== */
+.booking-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  backdrop-filter: blur(10px);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.booking-card.past {
+  opacity: 0.6;
+}
+
+.booking-card:active {
+  transform: scale(0.98);
+}
+
+.booking-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.booking-card-date {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
+}
+
+.booking-card-time {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.booking-card-body {
+  margin-bottom: 0.75rem;
+}
+
+.booking-card-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+}
+
+.booking-card-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.booking-card-notes {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-glass);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.booking-card-notes > div {
+  margin-bottom: 0.5rem;
+}
+
+.booking-card-notes > div:last-child {
+  margin-bottom: 0;
+}
+
+.booking-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.booking-card-actions .action-btn {
+  flex: 1;
+  min-width: 80px;
+  text-align: center;
+}
