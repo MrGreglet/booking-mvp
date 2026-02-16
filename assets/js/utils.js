@@ -5,6 +5,71 @@ function getTimezone() {
   return window.CONFIG?.timezone || 'Europe/London';
 }
 
+/**
+ * Create an ISO string for a specific date/time in the configured timezone
+ * @param {Date|string} date - Date object or 'YYYY-MM-DD' string
+ * @param {number} hour - Hour (0-23)
+ * @param {number} minute - Minute (0-59)
+ * @returns {string} ISO string in UTC representing that local time in configured timezone
+ */
+function createISOInTimezone(date, hour, minute) {
+  const tz = getTimezone();
+  
+  // Get date string in YYYY-MM-DD format
+  let dateStr;
+  if (typeof date === 'string') {
+    dateStr = date;
+  } else if (date instanceof Date) {
+    dateStr = formatDateYMD(date);
+  } else {
+    throw new Error('Invalid date parameter');
+  }
+  
+  // Create datetime string
+  const hourStr = String(hour).padStart(2, '0');
+  const minStr = String(minute).padStart(2, '0');
+  const dateTimeStr = `${dateStr}T${hourStr}:${minStr}:00`;
+  
+  // Parse this datetime AS IF it's in the target timezone
+  // Strategy: Use Intl.DateTimeFormat to get UTC offset at this moment
+  
+  // First, create a reference date in UTC
+  const referenceDate = new Date(dateTimeStr + 'Z');
+  
+  // Get what this date/time would be in the target timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  // Format the reference date to see what it looks like in target timezone
+  const parts = formatter.formatToParts(referenceDate);
+  const tzYear = parts.find(p => p.type === 'year').value;
+  const tzMonth = parts.find(p => p.type === 'month').value;
+  const tzDay = parts.find(p => p.type === 'day').value;
+  const tzHour = parts.find(p => p.type === 'hour').value;
+  const tzMinute = parts.find(p => p.type === 'minute').value;
+  const tzSecond = parts.find(p => p.type === 'second').value;
+  
+  const tzDateTimeStr = `${tzYear}-${tzMonth}-${tzDay}T${tzHour}:${tzMinute}:${tzSecond}`;
+  const tzDateTime = new Date(tzDateTimeStr + 'Z');
+  
+  // Calculate offset
+  const offset = referenceDate.getTime() - tzDateTime.getTime();
+  
+  // Apply inverse offset to get correct UTC time for our desired local time
+  const targetDate = new Date(dateTimeStr + 'Z');
+  const correctUTC = new Date(targetDate.getTime() - offset);
+  
+  return correctUTC.toISOString();
+}
+
 // --- Date/Time Utilities ---
 
 function formatTimeHM(date) {
@@ -167,5 +232,6 @@ function isSameDay(date1, date2) {
 window.utils = {
   formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, formatDateShort, getDayName, isSameDay,
   getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween, clamp,
-  simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein
+  simpleHash, showToast, showConfirmDialog, openSlidein, closeSlidein,
+  getTimezone, createISOInTimezone
 };

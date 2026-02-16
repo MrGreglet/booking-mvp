@@ -9,7 +9,7 @@
 const {
   formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, formatDateShort, getDayName, isSameDay,
   getISOWeek, getWeekStart, addDays, addMinutes,
-  showToast, openSlidein, closeSlidein
+  showToast, openSlidein, closeSlidein, createISOInTimezone
 } = window.utils;
 
 const storage = window.storage;
@@ -974,11 +974,14 @@ function renderAdminCalendar() {
       html += `<div class="time-label">${timeStr}</div>`;
       
       for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-        const slotDate = new Date(adminCurrentWeekStart);
-        slotDate.setDate(slotDate.getDate() + dayOffset);
-        slotDate.setHours(hour, minute, 0, 0);
+        // Get day in YYYY-MM-DD format
+        const dayDate = new Date(adminCurrentWeekStart);
+        dayDate.setDate(dayDate.getDate() + dayOffset);
+        const dayStr = formatDateYMD(dayDate);
         
-        const slotISO = slotDate.toISOString();
+        // Create slot time in configured timezone (not browser local time)
+        const slotISO = createISOInTimezone(dayStr, hour, minute);
+        const slotDate = new Date(slotISO);
         const slotTime = slotDate.getTime();
         const isPast = slotDate < new Date();
         
@@ -999,6 +1002,12 @@ function renderAdminCalendar() {
           // Multiple bookings - show as special color with count
           slotClass += ' multiple-pending';
           slotContent = `<span class="booking-count">${slotBookings.length}</span>`;
+          // Debug: Log double bookings for troubleshooting
+          if (window.DEBUG_DOUBLE_BOOKINGS) {
+            console.log(`Double booking at ${slotISO}:`, slotBookings.map(b => ({
+              id: b.id, user: b.userName, start: b.startISO, end: b.endISO, status: b.status
+            })));
+          }
         } else if (slotBookings.length === 1) {
           // Single booking
           const booking = slotBookings[0];
@@ -1496,8 +1505,13 @@ function openEditBookingForm(bookingId) {
     const userNotes = document.getElementById('edit-user-notes').value.trim();
     const adminNotes = document.getElementById('edit-admin-notes').value.trim();
     
-    const startISO = new Date(`${date}T${startTime}:00`).toISOString();
-    const endISO = new Date(`${date}T${endTime}:00`).toISOString();
+    // Parse time as HH:MM
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+    
+    // Create ISO strings in configured timezone (not browser local time)
+    const startISO = createISOInTimezone(date, startHour, startMin);
+    const endISO = createISOInTimezone(date, endHour, endMin);
     const durationMinutes = Math.round((new Date(endISO) - new Date(startISO)) / 60000);
     
     if (durationMinutes < 60) {

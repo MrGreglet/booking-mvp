@@ -8,7 +8,7 @@
 
 const {
   formatTimeHM, formatDateYMD, formatDateDDMMYY, formatDateWeekday, getDayName, getISOWeek, getWeekStart, addDays, addMinutes, minutesBetween,
-  showToast, openSlidein, closeSlidein
+  showToast, openSlidein, closeSlidein, createISOInTimezone
 } = window.utils;
 
 const storage = window.storage;
@@ -583,9 +583,9 @@ function renderCalendar() {
     
     // Day slots
     for (const day of days) {
-      const slotDate = new Date(day);
-      slotDate.setHours(hour, min, 0, 0);
-      const slotISO = slotDate.toISOString();
+      // Create slot time in configured timezone (not browser local time)
+      const slotISO = createISOInTimezone(day, hour, min);
+      const slotDate = new Date(slotISO);
       
       // Check if in past (disable for users)
       const isPast = slotDate < now;
