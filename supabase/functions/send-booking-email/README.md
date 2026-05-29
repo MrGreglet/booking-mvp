@@ -346,4 +346,4 @@ if (!error) {
 - Failed emails are logged but don't break the booking flow
 - All emails include booking ID for tracking
 - HTML and plain text versions provided
-- Times displayed in UTC (consider timezone handling in future)
+- Times displayed in Europe/London (UK local time with DST support)

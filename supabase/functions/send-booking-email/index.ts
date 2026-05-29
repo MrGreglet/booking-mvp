@@ -188,14 +188,14 @@ serve(async (req) => {
     let emailText: string
     let adminEmails: string[] = []
 
-    const startTime = new Date(booking.start_time).toLocaleString('en-US', {
+    const startTime = new Date(booking.start_time).toLocaleString('en-GB', {
       dateStyle: 'full',
       timeStyle: 'short',
-      timeZone: 'UTC'
+      timeZone: 'Europe/London'
     })
-    const endTime = new Date(booking.end_time).toLocaleString('en-US', {
+    const endTime = new Date(booking.end_time).toLocaleString('en-GB', {
       timeStyle: 'short',
-      timeZone: 'UTC'
+      timeZone: 'Europe/London'
     })
 
     if (event === 'BOOKING_SUBMITTED') {

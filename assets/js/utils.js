@@ -14,7 +14,7 @@ function getTimezone() {
  */
 function createISOInTimezone(date, hour, minute) {
   const tz = getTimezone();
-  
+
   // Get date string in YYYY-MM-DD format
   let dateStr;
   if (typeof date === 'string') {
@@ -24,20 +24,17 @@ function createISOInTimezone(date, hour, minute) {
   } else {
     throw new Error('Invalid date parameter');
   }
-  
-  // Create datetime string
-  const hourStr = String(hour).padStart(2, '0');
-  const minStr = String(minute).padStart(2, '0');
-  const dateTimeStr = `${dateStr}T${hourStr}:${minStr}:00`;
-  
-  // Parse this datetime AS IF it's in the target timezone
-  // Strategy: Use Intl.DateTimeFormat to get UTC offset at this moment
-  
-  // First, create a reference date in UTC
-  const referenceDate = new Date(dateTimeStr + 'Z');
-  
-  // Get what this date/time would be in the target timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
+
+  const [year, month, day] = dateStr.split('-').map(Number);
+  if (!year || !month || !day) {
+    throw new Error('Invalid date format, expected YYYY-MM-DD');
+  }
+
+  // Interpret the chosen wall-clock time as UTC first, then calculate
+  // what timezone offset applies in CONFIG.timezone at that instant.
+  // Final UTC time = wall-clock time - timezone offset.
+  const utcGuessMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
     year: 'numeric',
     month: '2-digit',
@@ -47,27 +44,19 @@ function createISOInTimezone(date, hour, minute) {
     second: '2-digit',
     hour12: false
   });
-  
-  // Format the reference date to see what it looks like in target timezone
-  const parts = formatter.formatToParts(referenceDate);
-  const tzYear = parts.find(p => p.type === 'year').value;
-  const tzMonth = parts.find(p => p.type === 'month').value;
-  const tzDay = parts.find(p => p.type === 'day').value;
-  const tzHour = parts.find(p => p.type === 'hour').value;
-  const tzMinute = parts.find(p => p.type === 'minute').value;
-  const tzSecond = parts.find(p => p.type === 'second').value;
-  
-  const tzDateTimeStr = `${tzYear}-${tzMonth}-${tzDay}T${tzHour}:${tzMinute}:${tzSecond}`;
-  const tzDateTime = new Date(tzDateTimeStr + 'Z');
-  
-  // Calculate offset
-  const offset = referenceDate.getTime() - tzDateTime.getTime();
-  
-  // Apply inverse offset to get correct UTC time for our desired local time
-  const targetDate = new Date(dateTimeStr + 'Z');
-  const correctUTC = new Date(targetDate.getTime() - offset);
-  
-  return correctUTC.toISOString();
+
+  const parts = formatter.formatToParts(new Date(utcGuessMs));
+  const getPartNumber = (type) => Number(parts.find(p => p.type === type)?.value);
+  const tzYear = getPartNumber('year');
+  const tzMonth = getPartNumber('month');
+  const tzDay = getPartNumber('day');
+  const tzHour = getPartNumber('hour');
+  const tzMinute = getPartNumber('minute');
+  const tzSecond = getPartNumber('second');
+
+  const asUTCMs = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMinute, tzSecond);
+  const offsetMs = asUTCMs - utcGuessMs;
+  return new Date(utcGuessMs - offsetMs).toISOString();
 }
 
 // --- Date/Time Utilities ---
